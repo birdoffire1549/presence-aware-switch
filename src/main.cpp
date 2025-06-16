@@ -1,7 +1,7 @@
 
 /*
   Firmware: .... presence-aware-switch
-  Version: ..... 1.0.0
+  Version: ..... 1.1.0
   Hardware: .... ESP-32
   Author: ...... Scott Griffis
   Date: ........ 06/15/2025
@@ -16,6 +16,7 @@
 
 #include <Arduino.h>
 #include <ArduinoBLE.h>
+#include <Settings.h>
 #include <map>
 #include <vector>
 
@@ -23,13 +24,12 @@
 #define LEARN_LED_PIN 9
 #define CONTROLLED_DEVICE_PIN 2
 
-#define MAX_SEEN_MILLIS 30000L
-#define OUT_OF_RANGE_RSSI -60
 #define INIT_ON_STATE false
 
-String pairedAddress = "xx:xx:xx:xx:xx:xx";
-bool controlledOnState = INIT_ON_STATE;
+Settings settings;
 
+// Function Prototypes
+// --------------------------------------
 void doLearnTask();
 void doBTScan();
 void doPurgeOldSeenDevices();
@@ -50,7 +50,9 @@ void setup() {
   pinMode(PAIR_PIN, INPUT);
   pinMode(CONTROLLED_DEVICE_PIN, OUTPUT);
 
-  digitalWrite(CONTROLLED_DEVICE_PIN, controlledOnState ? HIGH : LOW);
+  settings.loadSettings();
+
+  digitalWrite(CONTROLLED_DEVICE_PIN, settings.isOnState() ? HIGH : LOW);
 
   // Initialize Serial for Output
   Serial.begin(9600);
@@ -87,7 +89,11 @@ void loop() {
  * 
  */
 void doDeterminePairedDeviceProximity() {
-  controlledOnState = seenDevices.count(pairedAddress) > 0;
+  bool sState = settings.isOnState();
+  settings.setOnState(seenDevices.count(settings.getParedAddress()) > 0);
+  if (sState != settings.isOnState()) {
+    settings.saveSettings();
+  }
 }
 
 /**
@@ -99,11 +105,11 @@ void doDeterminePairedDeviceProximity() {
 void doHandleOnOffSwitching() {
   doDeterminePairedDeviceProximity();
 
-  if (controlledOnState && digitalRead(CONTROLLED_DEVICE_PIN) == LOW) {
+  if (settings.isOnState() && digitalRead(CONTROLLED_DEVICE_PIN) == LOW) {
     // Device is off but should be on; Turn it on
     digitalWrite(CONTROLLED_DEVICE_PIN, HIGH);
     Serial.printf("Device: ON!!!\n");
-  } else if (!controlledOnState && digitalRead(CONTROLLED_DEVICE_PIN) == HIGH) {
+  } else if (!settings.isOnState() && digitalRead(CONTROLLED_DEVICE_PIN) == HIGH) {
     // Device is on but should be off; Turn it off
     digitalWrite(CONTROLLED_DEVICE_PIN, LOW);
     Serial.printf("Device: OFF!!!\n");
@@ -122,7 +128,7 @@ void doPurgeOldSeenDevices() {
 
   // Locate old devices which need purged
   for (const auto& pair : seenDevices) {
-    if (millis() - pair.second >= MAX_SEEN_MILLIS) {
+    if (millis() - pair.second > settings.getMaxNotSeenMillis()) {
       purgeList.push_back(pair.first);
     }
   }
@@ -147,7 +153,7 @@ void doBTScan() {
 
   // Add or update seen device to map
   BLEDevice dev = BLE.available();
-  if (dev && dev.rssi() > OUT_OF_RANGE_RSSI) {
+  if (dev && dev.rssi() > settings.getMaxNearRssi()) {
     // Seen device is not out of range
     Serial.printf("Found new near device; device=[%s]; rssid=[%d]\n", dev.address().c_str(), dev.rssi());
     seenDevices[dev.address()] = millis();
@@ -178,7 +184,7 @@ void doLearnTask() {
     }
 
     // Wait 10 Seconds to allow nearest discovery then pair with nearest
-    if (millis() - learnStartMillis > 10000L) {
+    if (millis() - learnStartMillis > settings.getLearnWaitMillis()) {
       String nearestId = "";
       int nearestRssi = -999;
 
@@ -190,12 +196,18 @@ void doLearnTask() {
         }
       }
       // Pair with identified ID
-      pairedAddress = nearestId;
+      if (!settings.getParedAddress().equalsIgnoreCase(nearestId)) {
+        settings.setParedAddress(nearestId);
+        settings.saveSettings();
+        Serial.printf("Learning Complete! Paired Device is '%s', with RSSI of: %d\n\n", nearestId.c_str(), nearestRssi);
+      } else {
+        Serial.printf("Learning Complete! Paired Device is same as previous!\n\n");
+      }
 
       // Do end of learning tasks
       learning = false;
       learnStarted = false;
-      Serial.printf("Learning Complete! Paired Device is '%s', with RSSI of: %d\n\n", pairedAddress.c_str(), nearestRssi);
+      
       // TODO: LED OFF...
     }
   } else {
@@ -205,7 +217,7 @@ void doLearnTask() {
       if (highStartMillis == 0) {
         // Start the button press length timer
         highStartMillis = millis();
-      } else if (millis() - highStartMillis > 5000L) {
+      } else if (millis() - highStartMillis > settings.getEnableLearnHoldMillis()) {
         // Enter learning mode if button pressed for more than 5 seconds
         learning = true;
         overHold = true;
