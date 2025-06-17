@@ -1,7 +1,7 @@
 
 /*
   Firmware: .... presence-aware-switch
-  Version: ..... 1.1.2
+  Version: ..... 1.1.3
   Hardware: .... ESP-32
   Author: ...... Scott Griffis
   Date: ........ 06/15/2025
@@ -35,6 +35,7 @@ void doBTScan();
 void doPurgeOldSeenDevices();
 void doHandleOnOffSwitching();
 void doDeterminePairedDeviceProximity();
+void checkFactoryReset();
 
 std::map<String, ulong> seenDevices;
 std::map<String, int> seenRssis;
@@ -60,19 +61,7 @@ void setup() {
   Serial.begin(9600);
   if (!Serial) ESP.restart();
 
-  ulong holdStart = millis();
-  while(digitalRead(PAIR_PIN) == HIGH) {
-    yield();
-    if (millis() - holdStart >= 6000UL) {
-      Serial.println("Device Factory Reset!");
-      settings.factoryDefault();
-      
-      break;
-    }
-  }
-  while (digitalRead(PAIR_PIN) == HIGH) {
-    yield();
-  }
+  checkFactoryReset();
 
   // Initialize Bluetooth
   Serial.print("Starting Bluetooth... ");
@@ -104,6 +93,29 @@ void loop() {
   doHandleOnOffSwitching();
   
   yield();
+}
+
+/**
+ * Checks for a factory reset condition then performs the reset.
+ * 
+ */
+void checkFactoryReset() {
+  ulong holdStart = millis();
+  while(digitalRead(PAIR_PIN) == HIGH) {
+    yield();
+    if (millis() - holdStart >= 6000UL) {
+      Serial.println("Device Factory Reset!");
+      settings.factoryDefault();
+      
+      break;
+    }
+  }
+  while (digitalRead(PAIR_PIN) == HIGH) {
+    yield();
+    digitalWrite(LEARN_LED_PIN, digitalRead(LEARN_LED_PIN) == HIGH ? LOW : HIGH);
+    delay(150UL);
+  }
+  digitalWrite(LEARN_LED_PIN, LOW);
 }
 
 /**
