@@ -1,7 +1,7 @@
 
 /*
   Firmware: .... presence-aware-switch
-  Version: ..... 1.1.0
+  Version: ..... 1.1.2
   Hardware: .... ESP-32
   Author: ...... Scott Griffis
   Date: ........ 06/15/2025
@@ -21,7 +21,7 @@
 #include <vector>
 
 #define PAIR_PIN 32
-#define LEARN_LED_PIN 9
+#define LEARN_LED_PIN 13
 #define CONTROLLED_DEVICE_PIN 2
 
 #define INIT_ON_STATE false
@@ -49,14 +49,30 @@ std::vector<String> purgeList;
 void setup() {
   pinMode(PAIR_PIN, INPUT);
   pinMode(CONTROLLED_DEVICE_PIN, OUTPUT);
+  pinMode(LEARN_LED_PIN, OUTPUT);
 
   settings.loadSettings();
 
   digitalWrite(CONTROLLED_DEVICE_PIN, settings.isOnState() ? HIGH : LOW);
+  digitalWrite(LEARN_LED_PIN, LOW);
 
   // Initialize Serial for Output
   Serial.begin(9600);
   if (!Serial) ESP.restart();
+
+  ulong holdStart = millis();
+  while(digitalRead(PAIR_PIN) == HIGH) {
+    yield();
+    if (millis() - holdStart >= 6000UL) {
+      Serial.println("Device Factory Reset!");
+      settings.factoryDefault();
+      
+      break;
+    }
+  }
+  while (digitalRead(PAIR_PIN) == HIGH) {
+    yield();
+  }
 
   // Initialize Bluetooth
   Serial.print("Starting Bluetooth... ");
@@ -66,6 +82,13 @@ void setup() {
     ESP.restart();
   }
   Serial.println("Complete.");
+
+  Serial.printf("Learn Hold: %d millis\n", settings.getEnableLearnHoldMillis());
+  Serial.printf("Learn Wait: %d millis\n", settings.getLearnWaitMillis());
+  Serial.printf("Max Not Seen: %d millis\n", settings.getMaxNotSeenMillis());
+  Serial.printf("Max Near RSSI: %d \n", settings.getMaxNearRssi());
+  Serial.printf("Paired Address: %s\n", settings.getParedAddress().c_str());
+
   BLE.scan();
 }
 
@@ -137,7 +160,12 @@ void doPurgeOldSeenDevices() {
   for (String id : purgeList) {
     seenDevices.erase(id);
     seenRssis.erase(id);
-    Serial.printf("Purged 'seen' device; device=[%s]\n", id.c_str());
+    if (
+      settings.getParedAddress().equalsIgnoreCase("xx:xx:xx:xx:xx:xx") 
+      || settings.getParedAddress().equalsIgnoreCase(id)
+    ) { 
+      Serial.printf("Purged 'seen' device; device=[%s]\n", id.c_str());
+    }
   }
   purgeList.clear();
 }
@@ -155,9 +183,20 @@ void doBTScan() {
   BLEDevice dev = BLE.available();
   if (dev && dev.rssi() > settings.getMaxNearRssi()) {
     // Seen device is not out of range
-    Serial.printf("Found new near device; device=[%s]; rssid=[%d]\n", dev.address().c_str(), dev.rssi());
+    if (settings.getParedAddress().equalsIgnoreCase("xx:xx:xx:xx:xx:xx")) {
+      Serial.printf("Found new near device; device=[%s]; rssid=[%d]\n", dev.address().c_str(), dev.rssi());
+    } else if (settings.getParedAddress().equalsIgnoreCase(dev.address())) {
+      Serial.printf("Device Checked In! DeviceID=[%s]; RSSI=[%d];\n", dev.address().c_str(), dev.rssi());
+    }
     seenDevices[dev.address()] = millis();
     seenRssis[dev.address()] = dev.rssi();
+  } else if (dev) {
+    if (
+      settings.getParedAddress().equalsIgnoreCase("xx:xx:xx:xx:xx:xx") 
+      || settings.getParedAddress().equalsIgnoreCase(dev.address())
+    ) {
+      Serial.printf("Seen device RSSI too low! DeviceID=[%s]; RSSI=[%d];\n", dev.address().c_str(), dev.rssi());
+    }
   }
 }
 
@@ -177,7 +216,7 @@ void doLearnTask() {
   if (learning) {
     // Do start of learning tasks
     if (!learnStarted) {
-      // TODO: LED ON...
+      digitalWrite(LEARN_LED_PIN, HIGH);
       learnStartMillis = millis();
       Serial.printf("Learning started...\n");
       learnStarted = true;
@@ -208,7 +247,7 @@ void doLearnTask() {
       learning = false;
       learnStarted = false;
       
-      // TODO: LED OFF...
+      digitalWrite(LEARN_LED_PIN, LOW);
     }
   } else {
     // Not currently learning so check to see if learn button is pressed

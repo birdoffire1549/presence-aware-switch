@@ -45,8 +45,8 @@
 
             struct NVSettings factorySettings = {
                 false, // <------------------ onState
-                -60, // <-------------------- maxNearRssi
-                30000UL, // <---------------- maxNotSeenMillis
+                -80, // <-------------------- maxNearRssi
+                60000UL, // <---------------- maxNotSeenMillis
                 10000UL, // <---------------- learnWaitMillis
                 5000UL, // <----------------- enableLearnHoldMillis
                 "xx:xx:xx:xx:xx:xx", // <---- pairedAddress
