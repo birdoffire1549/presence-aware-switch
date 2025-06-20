@@ -1,7 +1,7 @@
 
 /*
   Firmware: .... presence-aware-switch
-  Version: ..... 1.1.5
+  Version: ..... 1.2.0
   Hardware: .... ESP-32
   Author: ...... Scott Griffis
   Date: ........ 06/15/2025
@@ -31,14 +31,14 @@ Settings settings;
 
 // Function Prototypes
 // --------------------------------------
-void doLearnTask();
+void doCheckLearnTask();
 void doBTScan();
 void doPurgeOldSeenDevices();
 void doHandleOnOffSwitching();
 void doDeterminePairedDeviceProximity();
 void doCheckForCloseDevice();
 void doHandleButtonPresses();
-void checkFactoryReset();
+void doCheckFactoryReset();
 
 std::map<String, ulong> seenDevices;
 std::map<String, int> seenRssis;
@@ -69,8 +69,6 @@ void setup() {
   Serial.begin(9600);
   if (!Serial) ESP.restart();
 
-  checkFactoryReset();
-
   // Initialize Bluetooth
   Serial.print("Starting Bluetooth... ");
   if (!BLE.begin()) {
@@ -97,37 +95,47 @@ void setup() {
  */
 void loop() {
   doBTScan();
-  doLearnTask();
   doHandleOnOffSwitching();
   doCheckForCloseDevice();
-  
+  doHandleButtonPresses();
+  doCheckFactoryReset();
+  doCheckLearnTask();
+
   yield();
 }
 
+/**
+ * This function is the sole handler of the learn button's 
+ * functionality. It notifies other functions when various tasks
+ * need to be performed using boolean event flags.
+ */
 void doHandleButtonPresses() {
-  ulong timerMillis = 0UL;
+  static ulong timerMillis = 0UL;
   if (digitalRead(PAIR_PIN) == HIGH) {
-    if (timerMillis = 0UL) {
+    if (timerMillis == 0UL) {
       timerMillis = millis();
     }
-    if (millis() - timerMillis > 30000UL) {
+    ulong nowMillis = millis();
+    if (nowMillis - timerMillis > 30000UL) {
       for (int i = 0; i < 4; i++) {
         digitalWrite(LEARN_LED_PIN, digitalRead(LEARN_LED_PIN) == HIGH ? LOW : HIGH);
         delay(50UL);
       }
-    } else if (millis() - timerMillis > settings.getEnableLearnHoldMillis()) {
-      digitalWrite(LEARN_LED_PIN, HIGH);
+    } else if (nowMillis - timerMillis >= settings.getEnableLearnHoldMillis()) {
+      if (digitalRead(LEARN_LED_PIN) == LOW) {
+        digitalWrite(LEARN_LED_PIN, HIGH);
+      }
     }
   } else if (timerMillis > 0UL) {
     ulong nowMillis = millis();
     if (nowMillis - timerMillis > 30000UL) {
       triggerFactoryReset = true;
-    } else if (nowMillis - timerMillis > settings.getEnableLearnHoldMillis()) {
+    } else if (nowMillis - timerMillis >= settings.getEnableLearnHoldMillis()) {
       triggerDeviceLearn = true;
     }
     timerMillis = 0UL;
     digitalWrite(LEARN_LED_PIN, LOW);
-  }
+  } 
 }
 
 /**
@@ -157,7 +165,7 @@ void doCheckForCloseDevice() {
  * Checks for a factory reset condition then performs the reset.
  * 
  */
-void checkFactoryReset() {
+void doCheckFactoryReset() {
   if (triggerFactoryReset) {
     Serial.println("Device Factory Reset!");
     ulong startMillis = millis();
@@ -273,7 +281,7 @@ void doBTScan() {
  * to it at the time the learning is performed.
  * 
  */
-void doLearnTask() {
+void doCheckLearnTask() {
   static ulong learnStartMillis = 0L;
   static bool learnStarted = false;
 
