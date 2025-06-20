@@ -1,7 +1,7 @@
 
 /*
   Firmware: .... presence-aware-switch
-  Version: ..... 1.1.4
+  Version: ..... 1.1.5
   Hardware: .... ESP-32
   Author: ...... Scott Griffis
   Date: ........ 06/15/2025
@@ -37,11 +37,15 @@ void doPurgeOldSeenDevices();
 void doHandleOnOffSwitching();
 void doDeterminePairedDeviceProximity();
 void doCheckForCloseDevice();
+void doHandleButtonPresses();
 void checkFactoryReset();
 
 std::map<String, ulong> seenDevices;
 std::map<String, int> seenRssis;
 std::vector<String> purgeList;
+
+bool triggerFactoryReset = false;
+bool triggerDeviceLearn = false;
 
 /**
  * SETUP
@@ -100,6 +104,37 @@ void loop() {
   yield();
 }
 
+void doHandleButtonPresses() {
+  ulong timerMillis = 0UL;
+  if (digitalRead(PAIR_PIN) == HIGH) {
+    if (timerMillis = 0UL) {
+      timerMillis = millis();
+    }
+    if (millis() - timerMillis > 30000UL) {
+      for (int i = 0; i < 4; i++) {
+        digitalWrite(LEARN_LED_PIN, digitalRead(LEARN_LED_PIN) == HIGH ? LOW : HIGH);
+        delay(50UL);
+      }
+    } else if (millis() - timerMillis > settings.getEnableLearnHoldMillis()) {
+      digitalWrite(LEARN_LED_PIN, HIGH);
+    }
+  } else if (timerMillis > 0UL) {
+    ulong nowMillis = millis();
+    if (nowMillis - timerMillis > 30000UL) {
+      triggerFactoryReset = true;
+    } else if (nowMillis - timerMillis > settings.getEnableLearnHoldMillis()) {
+      triggerDeviceLearn = true;
+    }
+    timerMillis = 0UL;
+    digitalWrite(LEARN_LED_PIN, LOW);
+  }
+}
+
+/**
+ * Checks to see if a device is close enough to be a good
+ * pair candidate and if so turns on the close device indicator
+ * LED. If not it ensures the LED is off.
+ */
 void doCheckForCloseDevice() {
   bool isClose = false;
   for (const auto& pair : seenRssis) {
@@ -123,22 +158,19 @@ void doCheckForCloseDevice() {
  * 
  */
 void checkFactoryReset() {
-  ulong holdStart = millis();
-  while(digitalRead(PAIR_PIN) == HIGH) {
-    yield();
-    if (millis() - holdStart >= 6000UL) {
-      Serial.println("Device Factory Reset!");
-      settings.factoryDefault();
-      
-      break;
+  if (triggerFactoryReset) {
+    Serial.println("Device Factory Reset!");
+    ulong startMillis = millis();
+    while (millis() - startMillis < 3500UL) {
+      yield();
+      digitalWrite(LEARN_LED_PIN, digitalRead(LEARN_LED_PIN) == HIGH ? LOW : HIGH);
+      delay(100UL);
     }
+    digitalWrite(LEARN_LED_PIN, LOW);
+    
+    settings.factoryDefault();
+    ESP.restart();
   }
-  while (digitalRead(PAIR_PIN) == HIGH) {
-    yield();
-    digitalWrite(LEARN_LED_PIN, digitalRead(LEARN_LED_PIN) == HIGH ? LOW : HIGH);
-    delay(150UL);
-  }
-  digitalWrite(LEARN_LED_PIN, LOW);
 }
 
 /**
@@ -242,13 +274,10 @@ void doBTScan() {
  * 
  */
 void doLearnTask() {
-  static ulong highStartMillis = 0L;
   static ulong learnStartMillis = 0L;
-  static bool overHold = false;
-  static bool learning = false;
   static bool learnStarted = false;
 
-  if (learning) {
+  if (triggerDeviceLearn) {
     // Do start of learning tasks
     if (!learnStarted) {
       digitalWrite(LEARN_LED_PIN, HIGH);
@@ -279,27 +308,10 @@ void doLearnTask() {
       }
 
       // Do end of learning tasks
-      learning = false;
       learnStarted = false;
-      
+      triggerDeviceLearn = false;
+
       digitalWrite(LEARN_LED_PIN, LOW);
-    }
-  } else {
-    // Not currently learning so check to see if learn button is pressed
-    if (!overHold && digitalRead(PAIR_PIN) == HIGH) {
-      // Learning button is pressed
-      if (highStartMillis == 0) {
-        // Start the button press length timer
-        highStartMillis = millis();
-      } else if (millis() - highStartMillis > settings.getEnableLearnHoldMillis()) {
-        // Enter learning mode if button pressed for more than 5 seconds
-        learning = true;
-        overHold = true;
-      }
-    } else if (digitalRead(PAIR_PIN) == LOW) {
-      // Clear learning button timer and all other related states
-      highStartMillis = 0L;
-      overHold = false;
     }
   }
 }
