@@ -84,6 +84,9 @@ void Settings::setOnState(bool onState) { nvSettings.onState = onState; }
 int Settings::getMaxNearRssi() { return nvSettings.maxNearRssi; }
 void Settings::setMaxNearRssi(int rssi) { nvSettings.maxNearRssi = rssi; }
 
+int Settings::getCloseRssi() { return nvSettings.closeRssi; }
+void Settings::setCloseRssi(int rssi) { nvSettings.closeRssi = rssi; }
+
 unsigned long Settings::getMaxNotSeenMillis() { return nvSettings.maxNotSeenMillis; }
 void Settings::setMaxNotSeenMillis(unsigned long millis) { nvSettings.maxNotSeenMillis = millis; }
 
@@ -112,6 +115,7 @@ void Settings::defaultSettings() {
     // Default the settings..
     nvSettings.onState = factorySettings.onState;
     nvSettings.maxNearRssi = factorySettings.maxNearRssi;
+    nvSettings.closeRssi = factorySettings.closeRssi;
     nvSettings.maxNotSeenMillis = factorySettings.maxNotSeenMillis;
     nvSettings.learnWaitMillis = factorySettings.learnWaitMillis;
     nvSettings.enableLearnHoldMillis = factorySettings.enableLearnHoldMillis;
@@ -130,6 +134,7 @@ String Settings::hashNvSettings(NVSettings nvSet) {
     String content = "";
     content = content + String(nvSet.onState);
     content = content + String(nvSet.maxNearRssi);
+    content = content + String(nvSet.closeRssi);
     content = content + String(nvSet.maxNotSeenMillis);
     content = content + String(nvSet.learnWaitMillis);
     content = content + String(nvSet.enableLearnHoldMillis);

@@ -23,6 +23,7 @@
 #define PAIR_PIN 32
 #define LEARN_LED_PIN 13
 #define CONTROLLED_DEVICE_PIN 2
+#define CLOSE_LED_PIN 17
 
 #define INIT_ON_STATE false
 
@@ -35,6 +36,7 @@ void doBTScan();
 void doPurgeOldSeenDevices();
 void doHandleOnOffSwitching();
 void doDeterminePairedDeviceProximity();
+void doCheckForCloseDevice();
 void checkFactoryReset();
 
 std::map<String, ulong> seenDevices;
@@ -51,11 +53,13 @@ void setup() {
   pinMode(PAIR_PIN, INPUT);
   pinMode(CONTROLLED_DEVICE_PIN, OUTPUT);
   pinMode(LEARN_LED_PIN, OUTPUT);
+  pinMode(CLOSE_LED_PIN, OUTPUT);
 
   settings.loadSettings();
 
   digitalWrite(CONTROLLED_DEVICE_PIN, settings.isOnState() ? HIGH : LOW);
   digitalWrite(LEARN_LED_PIN, LOW);
+  digitalWrite(CLOSE_LED_PIN, LOW);
 
   // Initialize Serial for Output
   Serial.begin(9600);
@@ -91,8 +95,27 @@ void loop() {
   doBTScan();
   doLearnTask();
   doHandleOnOffSwitching();
+  doCheckForCloseDevice();
   
   yield();
+}
+
+void doCheckForCloseDevice() {
+  bool isClose = false;
+  for (const auto& pair : seenRssis) {
+    if (pair.second >= settings.getCloseRssi()) {
+      isClose = true;
+      if (digitalRead(CLOSE_LED_PIN) == LOW) {
+        digitalWrite(CLOSE_LED_PIN, HIGH);
+      }
+
+      break;
+    }
+  }
+
+  if (!isClose && digitalRead(CLOSE_LED_PIN) == HIGH) {
+    digitalWrite(CLOSE_LED_PIN, LOW);
+  }
 }
 
 /**
@@ -196,7 +219,7 @@ void doBTScan() {
   if (dev && dev.rssi() > settings.getMaxNearRssi()) {
     // Seen device is not out of range
     if (settings.getParedAddress().equalsIgnoreCase("xx:xx:xx:xx:xx:xx")) {
-      Serial.printf("Found new near device; device=[%s]; rssid=[%d]\n", dev.address().c_str(), dev.rssi());
+      Serial.printf("Near device; device=[%s]; rssid=[%d]\n", dev.address().c_str(), dev.rssi());
     } else if (settings.getParedAddress().equalsIgnoreCase(dev.address())) {
       Serial.printf("Device Checked In! DeviceID=[%s]; RSSI=[%d];\n", dev.address().c_str(), dev.rssi());
     }

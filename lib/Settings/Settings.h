@@ -20,6 +20,9 @@
             int getMaxNearRssi();
             void setMaxNearRssi(int rssi);
 
+            int getCloseRssi();
+            void setCloseRssi(int rssi);
+
             unsigned long getMaxNotSeenMillis();
             void setMaxNotSeenMillis(unsigned long millis);
 
@@ -36,6 +39,7 @@
             struct NVSettings {
                 bool             onState                  ;
                 int              maxNearRssi              ;
+                int              closeRssi                ;
                 unsigned long    maxNotSeenMillis         ;
                 unsigned long    learnWaitMillis          ;
                 unsigned long    enableLearnHoldMillis    ;
@@ -46,6 +50,7 @@
             struct NVSettings factorySettings = {
                 false, // <------------------ onState
                 -80, // <-------------------- maxNearRssi
+                -50, // <-------------------- closeRssi
                 60000UL, // <---------------- maxNotSeenMillis
                 10000UL, // <---------------- learnWaitMillis
                 5000UL, // <----------------- enableLearnHoldMillis
