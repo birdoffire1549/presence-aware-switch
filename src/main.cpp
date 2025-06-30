@@ -32,16 +32,13 @@
 // Includes to support Web Service
 #include <WiFi.h>
 #include <DNSServer.h>
-#include <HTTPSServer.hpp> // Have to replace '#include <hwcrypto/sha.h>' with '#include <esp32/sha.h>' in HTTPConnection.hpp
-#include <SSLCert.hpp>
-#include <HTTPRequest.hpp>
-#include <HTTPResponse.hpp>
+#include <WebServer.h>
 
 // ************************************************************************************
 // Define Statements
 // ************************************************************************************
-#define FIRMWARE_VERSION "2.0.0"
-#define DEBUG 1
+#define FIRMWARE_VERSION "2.0.1"
+#define DEBUG // Enables Debug logging via serial, comment out for prod build.
 
 #define PAIR_PIN 32
 #define LEARN_LED_PIN 13
@@ -50,32 +47,9 @@
 
 #define INIT_ON_STATE false
 
-using namespace httpsserver;
-
 Settings settings;
 DNSServer dnsServer;
-
-// Create an SSL certificate object from the files included above
-SSLCert * cert = new SSLCert();
-
-// The function takes the following paramters:
-// - Key size: 1024 or 2048 bit should be fine here, 4096 on the ESP might be "paranoid mode"
-//   (in generel: shorter key = faster but less secure)
-// - Distinguished name: The name of the host as used in certificates.
-//   If you want to run your own DNS, the part after CN (Common Name) should match the DNS
-//   entry pointing to your ESP32. You can try to insert an IP there, but that's not really good style.
-// - Dates for certificate validity (optional, default is 2019-2029, both included)
-//   Format is YYYYMMDDhhmmss
-int createCertResult = createSelfSignedCert(
-  *cert,
-  KEYSIZE_2048,
-  "CN=*,O=APerson,C=US",
-  "20250101000000",
-  "21250101000000"
-);
-
-// First, we create the HTTPSServer with the certificate created above
-HTTPSServer secureServer = HTTPSServer(cert);
+WebServer web(80);
 
 // Function Prototypes
 // --------------------------------------
@@ -88,12 +62,10 @@ void doCheckForCloseDevice();
 void doHandleButtonPresses();
 void doHandleNetworkTasks();
 void doCheckFactoryReset();
+void doActivateDeactivateWiFi();
 
-// Web Handler Prototypes
-// ----------------------------------------------------
-void handleRootGet(HTTPRequest * req, HTTPResponse * res);
-void handleRootPost(HTTPRequest * req, HTTPResponse * res);
-void handle404(HTTPRequest * req, HTTPResponse * res);
+void handleSettingsPage();
+void handleSettingsPost();
 
 std::map<String, ulong> seenDevices;
 std::map<String, int> seenRssis;
@@ -101,9 +73,14 @@ std::vector<String> purgeList;
 
 bool triggerFactoryReset = false;
 bool triggerDeviceLearn = false;
+bool triggerWifiIsOn = false;
+
+bool wifiIsOn = false;
 
 String deviceId = Utils::genDeviceIdFromMacAddr(WiFi.macAddress());
-String deviceSsid = "ProxSwitch_" + deviceId;
+String deviceSsid = "ProxiSwitch_" + deviceId;
+String settingsUpdateResult = "";
+
 
 /**
  * SETUP
@@ -131,18 +108,18 @@ void setup() {
 
   // Initialize Bluetooth
   #ifdef DEBUG
-    Serial.print("Starting Bluetooth... ");
+    Serial.print(F("Starting Bluetooth... "));
   #endif
 
   if (!BLE.begin()) {
     #ifdef DEBUG
-      Serial.println("Issue with starting Bluetooth!");
+      Serial.println(F("Issue with starting Bluetooth!"));
+      delay(5000L);
     #endif
-    delay(5000L);
     ESP.restart();
   }
   #ifdef DEBUG
-    Serial.println("Complete.");
+    Serial.println(F("Complete."));
 
     Serial.printf("Learn Hold: %d millis\n", settings.getEnableLearnHoldMillis());
     Serial.printf("Learn Wait: %d millis\n", settings.getLearnWaitMillis());
@@ -151,66 +128,10 @@ void setup() {
     Serial.printf("Paired Address: %s\n", settings.getParedAddress().c_str());
   #endif
 
+  WiFi.disconnect(true);
+  WiFi.softAPdisconnect(true);
+
   BLE.scan();
-
-  if (createCertResult != 0) {
-    #ifdef DEBUG
-      Serial.printf("Cerating certificate failed. Error Code = 0x%02X, check SSLCert.hpp for details", createCertResult);
-    #endif
-  } else {
-    #ifdef DEBUG
-      Serial.println("Creating the SSL certificate was successful!");
-      Serial.println("Starting WiFi AP Mode...");
-    #endif
-
-    WiFi.setTxPower(WIFI_POWER_19_5dBm);
-    WiFi.setHostname((String("ProxSwitch_") + deviceId).c_str());
-    WiFi.setMinSecurity(WIFI_AUTH_WPA2_WPA3_PSK);
-    WiFi.softAPConfig(
-      IpUtils::stringIPv4ToIPAddress("192.168.4.1"), 
-      IpUtils::stringIPv4ToIPAddress("0.0.0.0"), 
-      IpUtils::stringIPv4ToIPAddress("255.255.255.0")
-    );
-    WiFi.softAP(deviceSsid.c_str(), settings.getApPwd().c_str());
-    dnsServer.start(53u, "*", IpUtils::stringIPv4ToIPAddress("192.168.4.1"));
-
-    ulong startMillis = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - startMillis < 5000UL) {
-      yield();
-    }
-
-    #ifdef DEBUG
-      if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("AP setup complete.");
-      } else {
-        Serial.println("AP Failed to Initialize! Skipping it.");
-      }
-    #endif
-    
-    #ifdef DEBUG
-      Serial.println("Initializing Secure Web Services...");
-    #endif
-    
-    ResourceNode * nodeRootGet = new ResourceNode("/", "GET", &handleRootGet);
-    ResourceNode * nodeRootPost = new ResourceNode("/", "POST", &handleRootPost);
-    ResourceNode * node404 = new ResourceNode("", "GET", &handle404);
-    
-    secureServer.registerNode(nodeRootGet);
-    secureServer.registerNode(nodeRootPost);
-    secureServer.setDefaultNode(node404);
-
-    #ifdef DEBUG
-      Serial.println("Starting server...");
-    #endif
-    secureServer.start();
-    #ifdef DEBUG
-      if (secureServer.isRunning()) {
-        Serial.println("Server ready.");
-      } else {
-        Serial.println("Server Failed to Start!");
-      }
-    #endif
-  }
 }
 
 /**
@@ -227,13 +148,15 @@ void loop() {
   doCheckFactoryReset();
   doCheckLearnTask();
   doHandleNetworkTasks();
-
   yield();
 }
 
 void doHandleNetworkTasks() {
-  dnsServer.processNextRequest();
-  secureServer.loop();
+  doActivateDeactivateWiFi();
+  if (wifiIsOn) {
+    dnsServer.processNextRequest();
+    web.handleClient();
+  }
 }
 
 /**
@@ -261,9 +184,14 @@ void doHandleButtonPresses() {
   } else if (timerMillis > 0UL) {
     ulong nowMillis = millis();
     if (nowMillis - timerMillis > 30000UL) {
+      // Press longer than 30 seconds does factory reset
       triggerFactoryReset = true;
     } else if (nowMillis - timerMillis >= settings.getEnableLearnHoldMillis()) {
+      // Press longer than set amount triggers Learn
       triggerDeviceLearn = true;
+    } else if (nowMillis - timerMillis > 500UL && nowMillis - timerMillis < settings.getEnableLearnHoldMillis()) {
+      // Press less than Learn setting turns on/off wifi
+      triggerWifiIsOn = !triggerWifiIsOn;
     }
     timerMillis = 0UL;
     digitalWrite(LEARN_LED_PIN, LOW);
@@ -300,7 +228,7 @@ void doCheckForCloseDevice() {
 void doCheckFactoryReset() {
   if (triggerFactoryReset) {
     #ifdef DEBUG
-      Serial.println("Device Factory Reset!");
+      Serial.println(F("Device Factory Reset!"));
     #endif
     ulong startMillis = millis();
     while (millis() - startMillis < 3500UL) {
@@ -336,12 +264,14 @@ void doHandleOnOffSwitching() {
   if (settings.isOnState() && digitalRead(CONTROLLED_DEVICE_PIN) == LOW) {
     // Device is off but should be on; Turn it on
     digitalWrite(CONTROLLED_DEVICE_PIN, HIGH);
-    //Serial.printf("Device: ON!!!\n");
+    #ifdef DEBUG
+      Serial.println(F("Device: ON!!!"));
+    #endif
   } else if (!settings.isOnState() && digitalRead(CONTROLLED_DEVICE_PIN) == HIGH) {
     // Device is on but should be off; Turn it off
     digitalWrite(CONTROLLED_DEVICE_PIN, LOW);
     #ifdef DEBUG
-      Serial.printf("Device: OFF!!!\n");
+      Serial.println(F("Device: OFF!!!"));
     #endif
   }
 }
@@ -367,12 +297,14 @@ void doPurgeOldSeenDevices() {
   for (String id : purgeList) {
     seenDevices.erase(id);
     seenRssis.erase(id);
-    if (
-      settings.getParedAddress().equalsIgnoreCase("xx:xx:xx:xx:xx:xx") 
-      || settings.getParedAddress().equalsIgnoreCase(id)
-    ) { 
-      Serial.printf("Purged 'seen' device; device=[%s]\n", id.c_str());
-    }
+    #ifdef DEBUG
+      if (
+        settings.getParedAddress().equalsIgnoreCase("xx:xx:xx:xx:xx:xx") 
+        || settings.getParedAddress().equalsIgnoreCase(id)
+      ) { 
+        Serial.printf("Purged 'seen' device; device=[%s]\n", id.c_str());
+      }
+    #endif
   }
   purgeList.clear();
 }
@@ -387,8 +319,10 @@ void doBTScan() {
   doPurgeOldSeenDevices();
 
   // Add or update seen device to map
+  BLE.poll();
   BLEDevice dev = BLE.available();
   if (dev && dev.rssi() > settings.getMaxNearRssi()) {
+    Serial.printf("DEBUG#1: rssi=[%d]; maxNear=[%d];\n", dev.rssi(), settings.getMaxNearRssi());
     // Seen device is not out of range
     #ifdef DEBUG
       if (settings.getParedAddress().equalsIgnoreCase("xx:xx:xx:xx:xx:xx")) {
@@ -427,7 +361,7 @@ void doCheckLearnTask() {
       digitalWrite(LEARN_LED_PIN, HIGH);
       learnStartMillis = millis();
       #ifdef DEBUG
-        Serial.printf("Learning started...\n");
+        Serial.println(F("Learning started..."));
       #endif
       learnStarted = true;
     }
@@ -453,7 +387,7 @@ void doCheckLearnTask() {
         #endif
       } else {
         #ifdef DEBUG
-          Serial.printf("Learning Complete! Paired Device is same as previous!\n\n");
+          Serial.println(F("Learning Complete! Paired Device is same as previous!\n"));
         #endif
       }
 
@@ -466,107 +400,174 @@ void doCheckLearnTask() {
   }
 }
 
-void handleRootGet(HTTPRequest * req, HTTPResponse * res) {
-  String page = String(SETTINGS_PAGE);
+void doActivateDeactivateWiFi() {
+  if (triggerWifiIsOn && !wifiIsOn) {
+    #ifdef DEBUG
+      Serial.print(F("Starting WiFi AP Mode..."));
+    #endif
 
-  std::string value;
-  if (req->getParams()->getQueryParameter("message", value)) {
-    page.replace("${message}", value.c_str());
-  } else {
-    page.replace("${message}", "");
+    WiFi.setHostname((String("PxiSw_") + deviceId).c_str());
+    WiFi.setMinSecurity(WIFI_AUTH_WPA2_PSK);
+    WiFi.softAPConfig(
+      IpUtils::stringIPv4ToIPAddress(F("192.168.4.1")), 
+      IpUtils::stringIPv4ToIPAddress(F("192.168.4.1")), 
+      IpUtils::stringIPv4ToIPAddress(F("255.255.255.0"))
+    );
+
+    WiFi.softAP(deviceSsid, settings.getApPwd());
+    WiFi.enableAP(true);
+    
+    #ifdef DEBUG
+      Serial.println(F(" Complete."));
+      Serial.println(F("Starting DNS for captive portal..."));
+    #endif
+
+    dnsServer.start(53u, "*", IpUtils::stringIPv4ToIPAddress(F("192.168.4.1")));
+      
+    #ifdef DEBUG
+      Serial.println(F(" Complete."));
+      Serial.print(F("Initializing Web Services..."));
+    #endif
+
+    web.on("/", handleSettingsPage);
+    web.onNotFound(handleSettingsPage);
+    web.begin();
+
+    #ifdef DEBUG
+      Serial.println(F(" Complete."));
+    #endif
+
+    wifiIsOn = true;
+  } else if (triggerWifiIsOn) {
+    static ulong timmerMillis = 0UL;
+    if (millis() - timmerMillis > 10UL) {
+      digitalWrite(LEARN_LED_PIN, (LEARN_LED_PIN == HIGH) ? LOW : HIGH);
+    }
+  } else if (!triggerWifiIsOn && wifiIsOn) {
+    #ifdef DEBUG
+      Serial.print(F("Stopping DNS Server..."));
+    #endif
+    dnsServer.stop();
+    #ifdef DEBUG
+      Serial.println(F(" Complete."));
+      Serial.print(F("Stopping web Server..."));
+    #endif
+    web.stop();
+    #ifdef DEBUG
+      Serial.println(F(" Complete."));
+      Serial.print(F("Stopping WiFi AP..."));
+    #endif
+    WiFi.softAPdisconnect(true);
+    #ifdef DEBUG
+      Serial.println(F(" Complete."));
+    #endif
+    
+    wifiIsOn = false;
+    if (digitalRead(LEARN_LED_PIN) == HIGH) {
+      digitalWrite(LEARN_LED_PIN, LOW);
+    }
   }
-
-  page.replace("${ap_pwd}", settings.getApPwd());
-  page.replace("${max_rssi}", String(settings.getCloseRssi()));
-  page.replace("${close_rssi}", String(settings.getMaxNearRssi()));
-  page.replace("${max_seen}", String(settings.getMaxNotSeenMillis()));
-  page.replace("${learn_trigger}", String(settings.getEnableLearnHoldMillis()));
-  page.replace("${learn_wait}", String(settings.getLearnWaitMillis()));
-
-  res->setHeader("Content-Type", "text/html");
-  res->println(page);
 }
 
-void handleRootPost(HTTPRequest * req, HTTPResponse * res) {
-  String newApPwd = "";
-  int newMaxRssi = -999;
-  int newCloseRssi = -999;
-  unsigned long newMaxSeenMillis = 0UL;
-  unsigned long newLearnTriggerMillis = 0UL;
-  unsigned long newLearnWaitMillis = 0UL;
+void handleSettingsPage() {
+  if (web.method() == HTTP_POST) {
+    handleSettingsPost();
+  }
 
-  ResourceParameters * params = req->getParams();
-  std::string value;
+  String page = String(SETTINGS_PAGE);
+
+  page.replace(F("${message}"), settingsUpdateResult);
+  settingsUpdateResult = "";
+
+  page.replace(F("${version}"), FIRMWARE_VERSION);
+  page.replace(F("${ap_pwd}"), settings.getApPwd());
+  page.replace(F("${close_rssi}"), String(settings.getCloseRssi()));
+  page.replace(F("${max_rssi}"), String(settings.getMaxNearRssi()));
+  page.replace(F("${max_seen}"), String(settings.getMaxNotSeenMillis()));
+  page.replace(F("${learn_trigger}"), String(settings.getEnableLearnHoldMillis()));
+  page.replace(F("${learn_wait}"), String(settings.getLearnWaitMillis()));
+  page.replace(F("${pared_address}"), settings.getParedAddress());
+
+  web.send(200, "text/html", page.c_str());
+  yield();
+}
+
+void handleSettingsPost() {
+  String newApPwd = web.arg(F("ap_pwd"));
+  String newMaxRssi = web.arg(F("max_rssi"));
+  String newCloseRssi = web.arg(F("close_rssi"));
+  String newMaxSeenMillis = web.arg(F("max_seen"));
+  String newLearnWaitMillis = web.arg(F("learn_wait"));
+  String newLearnTriggerMillis = web.arg(F("learn_trigger"));
   
-  if (params->getQueryParameter("ap_pwd", value)) {
-    newApPwd = String(value.c_str());
-    if (params->getQueryParameter("max_rssi", value)) {
-      newMaxRssi = std::stoi(value);
-      if (params->getQueryParameter("close_rssi", value)) {
-        newCloseRssi = std::stoi(value);
-        if (params->getQueryParameter("max_seen", value)) {
-          newMaxSeenMillis = std::stoul(value);
-          if (params->getQueryParameter("learn_trigger", value)) {
-            newLearnTriggerMillis = std::stoul(value);
-            if (params->getQueryParameter("learn_wait", value)) {
-              newLearnWaitMillis = std::stoul(value);
+  if (
+    newApPwd && !newApPwd.isEmpty()
+    && newMaxRssi && !newMaxRssi.isEmpty()
+    && newCloseRssi && !newCloseRssi.isEmpty()
+    && newMaxSeenMillis && !newMaxSeenMillis.isEmpty()
+    && newLearnWaitMillis && !newLearnWaitMillis.isEmpty()
+    && newLearnTriggerMillis && !newLearnTriggerMillis.isEmpty()
+  ) {
+    bool needSave = false;
+    bool needReboot = false;
 
-              bool needSave = false;
-              bool needReboot = false;
-              if (!settings.getApPwd().equals(newApPwd)) {
-                needSave = true;
-                needReboot = true;
-                settings.setApPwd(newApPwd);
-              }
-              if (settings.getMaxNearRssi() != newMaxRssi) {
-                needSave = true;
-                settings.setMaxNearRssi(newMaxRssi);
-              }
-              if (settings.getCloseRssi() != newCloseRssi) {
-                needSave = true;
-                settings.setCloseRssi(newCloseRssi);
-              }
-              if (settings.getMaxNotSeenMillis() != newMaxSeenMillis) {
-                needSave = true;
-                settings.setMaxNotSeenMillis(newMaxSeenMillis);
-              }
-              if (settings.getEnableLearnHoldMillis() != newLearnTriggerMillis) {
-                needSave = true;
-                settings.setEnableLearnHoldMillis(newLearnTriggerMillis);
-              }
-              if (settings.getLearnWaitMillis() != newLearnWaitMillis) {
-                needSave = true;
-                settings.setLearnWaitMillis(newLearnWaitMillis);
-              }
+    if (!settings.getApPwd().equals(newApPwd)) {
+      needSave = true;
+      needReboot = true;
+      settings.setApPwd(newApPwd);
+    }
 
-              if (needSave) {
-                bool ok = settings.saveSettings();
-                #ifdef DEBUG
-                  if (ok) {
-                    Serial.println("Settings Updated!");
-                  } else {
-                    Serial.println("Settings update Failed!!!");
-                  }
-                #endif
-                if (needReboot) {
-                  #ifdef DEBUG
-                    Serial.println("Device rebooting to settings...");
-                    delay(10000UL);
-                  #endif
-                  ESP.restart();
-                }
-              }
-            }
-          }
+    int intVal = newMaxRssi.toInt();
+    if (settings.getMaxNearRssi() != intVal) {
+      needSave = true;
+      settings.setMaxNearRssi(intVal);
+    }
+
+    intVal = newCloseRssi.toInt();
+    if (settings.getCloseRssi() != intVal) {
+      needSave = true;
+      settings.setCloseRssi(intVal);
+    }
+
+    unsigned long ulVal = newMaxSeenMillis.toDouble();
+    if (settings.getMaxNotSeenMillis() != ulVal) {
+      needSave = true;
+      settings.setMaxNotSeenMillis(ulVal);
+    }
+
+    ulVal = newLearnTriggerMillis.toDouble();
+    if (settings.getEnableLearnHoldMillis() != ulVal) {
+      needSave = true;
+      settings.setEnableLearnHoldMillis(ulVal);
+    }
+
+    ulVal = newLearnWaitMillis.toDouble();
+    if (settings.getLearnWaitMillis() != ulVal) {
+      needSave = true;
+      settings.setLearnWaitMillis(ulVal);
+    }
+
+    if (needSave) {
+      bool ok = settings.saveSettings();
+        if (ok) {
+          settingsUpdateResult = String(SUCCESSFUL);
+          #ifdef DEBUG
+            Serial.println(F("Settings Updated!"));
+          #endif
+        } else {
+          settingsUpdateResult = String(FAILED);
+          #ifdef DEBUG
+            Serial.println(F("Settings update Failed!!!"));
+          #endif
         }
+      
+      if (needReboot) {
+        #ifdef DEBUG
+          Serial.println(F("Device rebooting to settings..."));
+          delay(10000UL);
+        #endif
+        ESP.restart();
       }
     }
   }
-
-  handleRootGet(req, res);
-}
-
-void handle404(HTTPRequest * req, HTTPResponse * res) {
-  res->setHeader("Content-Type", "text/html");
-  res->println(String(NOT_FOUND_PAGE));
 }
