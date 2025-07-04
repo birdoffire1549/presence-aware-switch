@@ -196,6 +196,7 @@ void doCheckFactoryReset() {
     digitalWrite(LEARN_LED_PIN, LOW);
     
     settings.factoryDefault();
+    Serial.println("Factory reset complete; Rebooting ESP now!");
     ESP.restart();
   }
 }
