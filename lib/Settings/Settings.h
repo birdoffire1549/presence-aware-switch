@@ -35,27 +35,36 @@
             String getParedAddress();
             void setParedAddress(String address);
 
+            String getApPwd();
+            void setApPwd(String apPwd);
+
         private:
             struct NVSettings {
-                bool             onState                  ;
                 int              maxNearRssi              ;
                 int              closeRssi                ;
                 unsigned long    maxNotSeenMillis         ;
                 unsigned long    learnWaitMillis          ;
                 unsigned long    enableLearnHoldMillis    ;
                 char             pairedAddress    [18]    ;
+                char             apPwd            [64]    ;
                 char             sentinel         [33]    ; // Holds a 32 MD5 hash + 1
             } nvSettings;
 
             struct NVSettings factorySettings = {
-                false, // <------------------ onState
                 -80, // <-------------------- maxNearRssi
                 -50, // <-------------------- closeRssi
                 60000UL, // <---------------- maxNotSeenMillis
                 10000UL, // <---------------- learnWaitMillis
                 5000UL, // <----------------- enableLearnHoldMillis
                 "xx:xx:xx:xx:xx:xx", // <---- pairedAddress
+                "P@ssw0rd123", // <---------- apPwd
                 "NA" // <-------------------- sentinel
+            };
+
+            struct VSettings {
+                bool             onState                  ;
+            } vSettings = {
+                false, // <------------------ onState
             };
 
             void defaultSettings();

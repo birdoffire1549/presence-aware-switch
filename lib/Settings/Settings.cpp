@@ -78,8 +78,8 @@ bool Settings::loadSettings() {
     return ok;
 }
 
-bool Settings::isOnState() { return nvSettings.onState; }
-void Settings::setOnState(bool onState) { nvSettings.onState = onState; }
+bool Settings::isOnState() { return vSettings.onState; }
+void Settings::setOnState(bool onState) { vSettings.onState = onState; }
 
 int Settings::getMaxNearRssi() { return nvSettings.maxNearRssi; }
 void Settings::setMaxNearRssi(int rssi) { nvSettings.maxNearRssi = rssi; }
@@ -99,6 +99,9 @@ void Settings::setEnableLearnHoldMillis(unsigned long millis) { nvSettings.enabl
 String Settings::getParedAddress() { return String(nvSettings.pairedAddress); }
 void Settings::setParedAddress(String address) { strcpy(nvSettings.pairedAddress, address.c_str()); }
 
+String Settings::getApPwd() { return String(nvSettings.apPwd); }
+void Settings::setApPwd(String apPwd) { strcpy(nvSettings.apPwd, apPwd.c_str()); }
+
 /*
 =================================================================
 Private Functions BELOW
@@ -112,14 +115,14 @@ Private Functions BELOW
  * changes to flash.
 */
 void Settings::defaultSettings() {
-    // Default the settings..
-    nvSettings.onState = factorySettings.onState;
+    // Default the settings...
     nvSettings.maxNearRssi = factorySettings.maxNearRssi;
     nvSettings.closeRssi = factorySettings.closeRssi;
     nvSettings.maxNotSeenMillis = factorySettings.maxNotSeenMillis;
     nvSettings.learnWaitMillis = factorySettings.learnWaitMillis;
     nvSettings.enableLearnHoldMillis = factorySettings.enableLearnHoldMillis;
     strcpy(nvSettings.pairedAddress, factorySettings.pairedAddress);
+    strcpy(nvSettings.apPwd, factorySettings.apPwd);
 }
 
 /**
@@ -132,13 +135,13 @@ void Settings::defaultSettings() {
 */
 String Settings::hashNvSettings(NVSettings nvSet) {
     String content = "";
-    content = content + String(nvSet.onState);
     content = content + String(nvSet.maxNearRssi);
     content = content + String(nvSet.closeRssi);
     content = content + String(nvSet.maxNotSeenMillis);
     content = content + String(nvSet.learnWaitMillis);
     content = content + String(nvSet.enableLearnHoldMillis);
     content = content + nvSet.pairedAddress;
+    content = content + nvSet.apPwd;
     
     MD5Builder builder = MD5Builder();
     builder.begin();
