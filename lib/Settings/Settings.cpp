@@ -102,6 +102,15 @@ void Settings::setParedAddress(String address) { strcpy(nvSettings.pairedAddress
 String Settings::getApPwd() { return String(nvSettings.apPwd); }
 void Settings::setApPwd(String apPwd) { strcpy(nvSettings.apPwd, apPwd.c_str()); }
 
+unsigned long Settings::getStartups() { return nvSettings.startups;}
+unsigned long Settings::getLastStartMillis() { return nvSettings.lastStartMillis; }
+
+void Settings::logStartup() {
+    nvSettings.startups ++;
+    nvSettings.lastStartMillis = millis();
+    saveSettings();
+}
+
 /*
 =================================================================
 Private Functions BELOW

@@ -1,7 +1,6 @@
 
 /*
   Firmware: .... presence-aware-switch
-  Version: ..... 2.0.2
   Hardware: .... ESP-32
   Author: ...... Scott Griffis
   Date: ........ 07/04/2025
@@ -42,7 +41,7 @@
 
 #define INIT_ON_STATE false
 
-#define FIRMWARE_VERSION "2.1.1"
+#define FIRMWARE_VERSION "2.1.3"
 #define DEBUG
 
 Settings settings;
@@ -109,6 +108,7 @@ void setup() {
   pinMode(CLOSE_LED_PIN, OUTPUT);
 
   settings.loadSettings();
+  settings.logStartup();
 
   digitalWrite(CONTROLLED_DEVICE_PIN, settings.isOnState() ? HIGH : LOW);
   digitalWrite(LEARN_LED_PIN, LOW);
@@ -560,6 +560,8 @@ void handleSettingsPage() {
   page.replace(F("${learn_trigger}"), String(settings.getEnableLearnHoldMillis()));
   page.replace(F("${learn_wait}"), String(settings.getLearnWaitMillis()));
   page.replace(F("${pared_address}"), settings.getParedAddress());
+  page.replace(F("${startups}"), String(settings.getStartups()));
+  page.replace(F("${uptime}"), String((millis() - settings.getLastStartMillis())));
 
   web.send(200, F("text/html"), page.c_str());
   yield();
