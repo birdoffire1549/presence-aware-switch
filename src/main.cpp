@@ -125,6 +125,7 @@ void setup() {
   #ifdef DEBUG
     // Initialize Serial for Output
     Serial.begin(115200);
+    delay(500);
     if (!Serial) ESP.restart();
   #endif
 

@@ -106,7 +106,7 @@ unsigned long Settings::getStartups() { return nvSettings.startups;}
 unsigned long Settings::getLastStartMillis() { return nvSettings.lastStartMillis; }
 
 void Settings::logStartup() {
-    nvSettings.startups ++;
+    nvSettings.startups = nvSettings.startups + 1UL;
     nvSettings.lastStartMillis = millis();
     saveSettings();
 }
@@ -125,6 +125,8 @@ Private Functions BELOW
 */
 void Settings::defaultSettings() {
     // Default the settings...
+    nvSettings.startups = factorySettings.startups;
+    nvSettings.lastStartMillis = factorySettings.lastStartMillis;
     nvSettings.maxNearRssi = factorySettings.maxNearRssi;
     nvSettings.closeRssi = factorySettings.closeRssi;
     nvSettings.maxNotSeenMillis = factorySettings.maxNotSeenMillis;
