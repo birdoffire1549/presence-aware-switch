@@ -9,6 +9,7 @@
         public:
             static String hashString(String string);
             static String genDeviceIdFromMacAddr(String macAddress);
+            static String userFriendlyElapsedTime(unsigned long elapsedMillis);
     };
 
 #endif

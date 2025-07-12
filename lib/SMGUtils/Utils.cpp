@@ -35,3 +35,54 @@ String Utils::genDeviceIdFromMacAddr(String macAddress) {
 
     return result;
 }
+
+/**
+ * Used to generate a user friendly human readable string which is
+ * capable of telling the number of Weeks, Days, Hours, Mins, Secs of 
+ * a given elapsed time in milliseconds.
+ * 
+ * @param elapsedMillis - The elapsed milliseconds as unsigned long value.
+ * 
+ * @return Returns a user friendly String representation of the elapsed time.
+ */
+String Utils::userFriendlyElapsedTime(unsigned long elapsedMillis) {
+    static const unsigned long minMillis = 60000UL;
+    static const unsigned long hourMillis = minMillis * 60UL;
+    static const unsigned long dayMillis = hourMillis * 24UL;
+    static const unsigned long weekMillis = dayMillis * 7UL;
+
+    String result = "";
+    unsigned long timeLeftMillis = elapsedMillis;
+    
+    unsigned long refVal = timeLeftMillis / weekMillis;
+    if (refVal > 0) {
+        result += (String(refVal) + " Week(s), ");
+        timeLeftMillis -= (refVal * weekMillis);
+    }
+
+    refVal  = timeLeftMillis / dayMillis;
+    if (refVal > 0 || !result.isEmpty()) {
+        result += (String(refVal) + " Day(s), ");
+        timeLeftMillis -= (refVal * dayMillis);
+    }
+
+    refVal  = timeLeftMillis / hourMillis;
+    if (refVal > 0 || !result.isEmpty()) {
+        result += (String(refVal) + " Hour(s), ");
+        timeLeftMillis -= (refVal * hourMillis);
+    }
+
+    refVal  = timeLeftMillis / minMillis;
+    if (refVal > 0 || !result.isEmpty()) {
+        result += (String(refVal) + " Min(s), ");
+        timeLeftMillis -= (refVal * minMillis);
+    }
+
+    refVal  = timeLeftMillis / 1000UL;
+    if (refVal > 0) {
+        result += (String(refVal) + " Sec(s), ");
+        timeLeftMillis -= (refVal * 1000UL);
+    }
+
+    return result;
+}

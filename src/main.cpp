@@ -41,7 +41,7 @@
 
 #define INIT_ON_STATE false
 
-#define FIRMWARE_VERSION "2.1.3"
+#define FIRMWARE_VERSION "2.2.0"
 #define DEBUG
 
 Settings settings;
@@ -284,11 +284,15 @@ void doHandleButtonPresses() {
     ulong elapsedMillis = millis() - timerMillis;
 
     if (digitalRead(PAIR_BTN_PIN) == HIGH) {
+      // Button is held down
       if (timerMillis == 0UL) {
+        // Start timer so we know how long button is held down
         timerMillis = millis();
         elapsedMillis = 0UL;
       }
+
       if (!triggerWifiIsOn && elapsedMillis > minFactoryHoldMillis) {
+        // Button held for longer than needed for factory reset; Disabled if wifi is on
         ledMan.ledOff(LEARN_LED_ID, LEARN_FUNCTION_ID);
         ledMan.lockLed(LEARN_LED_ID, FACTORY_RESET_FUNCTION_ID);
         // Flashing learning LED to signal factory reset on release
@@ -297,10 +301,8 @@ void doHandleButtonPresses() {
           ledMan.loop();
           delay(50UL);
         }
-      } else if (
-        !triggerWifiIsOn 
-        && elapsedMillis >= settings.getEnableLearnHoldMillis()
-      ) {
+      } else if (!triggerWifiIsOn && elapsedMillis >= settings.getEnableLearnHoldMillis()) {
+        // Button held long enough too trigger learn; Disabled if wifi on
         // Turn on learning LED Solid to signal function triggered if released
         ledMan.releaseLed(CLOSE_LED_ID, WIFI_ENABLE_FUNCTION_ID);
         ledMan.ledOff(CLOSE_LED_ID, WIFI_ENABLE_FUNCTION_ID);
@@ -562,7 +564,7 @@ void handleSettingsPage() {
   page.replace(F("${learn_wait}"), String(settings.getLearnWaitMillis()));
   page.replace(F("${pared_address}"), settings.getParedAddress());
   page.replace(F("${startups}"), String(settings.getStartups()));
-  page.replace(F("${uptime}"), String((millis() - settings.getLastStartMillis())));
+  page.replace(F("${uptime}"), Utils::userFriendlyElapsedTime((millis() - settings.getLastStartMillis())));
 
   web.send(200, F("text/html"), page.c_str());
   yield();

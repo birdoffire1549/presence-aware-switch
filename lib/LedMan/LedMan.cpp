@@ -67,7 +67,8 @@ void LedMan::lockLed(String ledId, String caller) {
 
 void LedMan::releaseLed(String ledId, String caller) {
     if (locks.count(caller.c_str()) > 0 && locks[caller.c_str()].count(ledId.c_str()) > 0) {
-        locks.erase(ledId.c_str());
+        // If locked on specified LED
+        locks[caller.c_str()].erase(ledId.c_str());
         if (
             callerStates.count(caller.c_str()) > 0 
             && callerStates[caller.c_str()].count(ledId.c_str()) > 0 
@@ -107,8 +108,9 @@ void LedMan::loop() {
         int lastPriority = INT_MAX;
 
         for (const auto& callerState : callerStates) {
+            // Iterate caller states to see what each wants state to be
             if (callerState.second.count(ledId.c_str()) > 0) {
-                // Caller state has a state for current LED
+                // Caller has a state for current LED
                 std::string caller = callerState.first;
                 if (
                     lastPriority == INT_MAX
@@ -117,6 +119,7 @@ void LedMan::loop() {
                         && priorities[caller.c_str()] <= lastPriority
                     )
                 ) {
+                    // Caller priority is greater or same to referenced one
                     lastPriority = priorities[caller.c_str()];
                     std::map<std::string, int> ledStates = callerState.second;
                     calcState = ledStates[ledId];

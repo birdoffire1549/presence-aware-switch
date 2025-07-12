@@ -28,7 +28,7 @@
                     "<h2>Settings Page</h2>"
                     "<p>"
                     "Firmware Version: ${version}<br />"
-                    "Uptime: ${uptime} millis;&nbsp;&nbsp;&nbsp;&nbsp;Startup Count: ${startups}"
+                    "Uptime: ${uptime};<br />Startup Count: ${startups}"
                     "</p>"
                     "<form action=\"/\" method=\"post\">"
                         "<table>"
