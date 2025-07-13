@@ -56,31 +56,31 @@ String Utils::userFriendlyElapsedTime(unsigned long elapsedMillis) {
     
     unsigned long refVal = timeLeftMillis / weekMillis;
     if (refVal > 0) {
-        result += (String(refVal) + " Week(s), ");
+        result += (String(refVal) + " Week, ");
         timeLeftMillis -= (refVal * weekMillis);
     }
 
     refVal  = timeLeftMillis / dayMillis;
     if (refVal > 0 || !result.isEmpty()) {
-        result += (String(refVal) + " Day(s), ");
+        result += (String(refVal) + " Day, ");
         timeLeftMillis -= (refVal * dayMillis);
     }
 
     refVal  = timeLeftMillis / hourMillis;
     if (refVal > 0 || !result.isEmpty()) {
-        result += (String(refVal) + " Hour(s), ");
+        result += (String(refVal) + " Hour, ");
         timeLeftMillis -= (refVal * hourMillis);
     }
 
     refVal  = timeLeftMillis / minMillis;
     if (refVal > 0 || !result.isEmpty()) {
-        result += (String(refVal) + " Min(s), ");
+        result += (String(refVal) + " Min, ");
         timeLeftMillis -= (refVal * minMillis);
     }
 
     refVal  = timeLeftMillis / 1000UL;
     if (refVal > 0) {
-        result += (String(refVal) + " Sec(s), ");
+        result += (String(refVal) + " Sec");
         timeLeftMillis -= (refVal * 1000UL);
     }
 

@@ -81,6 +81,9 @@ bool isLearning = false;
 bool isScanning = false;
 bool isWifiIsOn = false;
 
+unsigned long scanningWatchdogMillis = 0UL;
+unsigned long btScanWDExpos = 0UL;
+
 String deviceId = Utils::genDeviceIdFromMacAddr(WiFi.macAddress());
 String deviceSsid = "ProxiSwitch_" + deviceId;
 String settingsUpdateResult = "";
@@ -124,25 +127,23 @@ void setup() {
 
   #ifdef DEBUG
     // Initialize Serial for Output
-    Serial.begin(115200);
-    delay(500);
+    Serial.begin(115200);;
+    delay(1000UL);
     if (!Serial) ESP.restart();
   #endif
-
-  BLEDevice::init("");
+  delay(1000UL);
 
   #ifdef DEBUG
-    Serial.print(F("Reinitializing Bluetooth... "));
+    Serial.print("Initializing bluetooth... ");
   #endif
-  scan = BLEDevice::getScan();
-  scan->setActiveScan(true);  //active scan uses more power, but get results faster
-  scan->setInterval(100);
-  scan->setWindow(99);  // less or equal setInterval value
-  scan->start(5, handleBTScanResults);
-  isScanning = true;
+  
+  BLEDevice::init("");
+  
   #ifdef DEBUG
-    Serial.println(F("Complete."));
+    Serial.println("Complete.");
+  #endif
 
+  #ifdef DEBUG
     Serial.printf("Learn Hold: %d millis\n", settings.getEnableLearnHoldMillis());
     Serial.printf("Learn Wait: %d millis\n", settings.getLearnWaitMillis());
     Serial.printf("Max Not Seen: %d millis\n", settings.getMaxNotSeenMillis());
@@ -166,8 +167,6 @@ void loop() {
   doCheckFactoryReset();
   doCheckLearnTask();
   doHandleNetworkTasks();
-
-  yield();
 }
 
 /**
@@ -255,7 +254,6 @@ void doActivateDeactivateWiFi() {
     #endif
 
     WiFi.softAPdisconnect(true);
-    WiFi.mode(WIFI_OFF);
     
     #ifdef DEBUG
       Serial.println(F("Complete."));
@@ -478,13 +476,36 @@ void doPurgeOldSeenDevices() {
  * 
  */
 void doBTScan() {
-  doPurgeOldSeenDevices();
+  static bool firstRun = true;
+  bool wdExpired = millis() - scanningWatchdogMillis > 15000UL;
+  if (!isScanning || wdExpired) {
+    // Start scanning when it is done or if watchdog expires
+    if (wdExpired || firstRun) {
+      if (!firstRun) {
+        btScanWDExpos ++;
+        #ifdef DEBUG
+          Serial.println("WARN: BT Scan watchdog exipred!");
+        #endif
+      }
 
-  if (!isScanning) {
-    // Start scanning when it is done
-    scan->start(5, handleBTScanResults);
+      scan = BLEDevice::getScan();
+      scan->clearResults();
+      scan->stop();
+      yield();
+      delay(500);
+      scan->setActiveScan(true);  //active scan uses more power, but get results faster
+      scan->setInterval(100);
+      scan->setWindow(99);  // less or equal setInterval value
+      firstRun = false;
+    }
+    
     isScanning = true;
+    scan->start(5, handleBTScanResults);
+
+    scanningWatchdogMillis = millis();
   }
+
+  doPurgeOldSeenDevices();
 }
 
 /**
@@ -565,6 +586,10 @@ void handleSettingsPage() {
   page.replace(F("${pared_address}"), settings.getParedAddress());
   page.replace(F("${startups}"), String(settings.getStartups()));
   page.replace(F("${uptime}"), Utils::userFriendlyElapsedTime((millis() - settings.getLastStartMillis())));
+  page.replace(F("${free_heap}"), String(ESP.getFreeHeap()));
+  page.replace(F("${seen_devices}"), String(seenDevices.size()));
+  page.replace(F("${seen_rssis}"), String(seenRssis.size()));
+  page.replace(F("${scan_watchdogs}"), String(btScanWDExpos));
 
   web.send(200, F("text/html"), page.c_str());
   yield();
@@ -706,5 +731,6 @@ void handleBTScanResults(BLEScanResults results) {
       #endif
     }
   }
+
   isScanning = false;
 }
