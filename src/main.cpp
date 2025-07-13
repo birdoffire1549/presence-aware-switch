@@ -41,7 +41,7 @@
 
 #define INIT_ON_STATE false
 
-#define FIRMWARE_VERSION "2.2.0"
+#define FIRMWARE_VERSION "2.2.1"
 #define DEBUG
 
 Settings settings;
