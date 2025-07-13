@@ -41,8 +41,8 @@
 
 #define INIT_ON_STATE false
 
-#define FIRMWARE_VERSION "2.2.1"
-#define DEBUG
+#define FIRMWARE_VERSION "2.2.2"
+//#define DEBUG // <---- un-comment for debug
 
 Settings settings;
 DNSServer dnsServer;
@@ -130,10 +130,8 @@ void setup() {
     Serial.begin(115200);;
     delay(1000UL);
     if (!Serial) ESP.restart();
-  #endif
-  delay(1000UL);
+    delay(1000UL);
 
-  #ifdef DEBUG
     Serial.print("Initializing bluetooth... ");
   #endif
   
@@ -549,7 +547,9 @@ void doCheckLearnTask() {
           Serial.printf("Learning Complete! Paired Device is '%s', with RSSI of: %d\n\n", nearestId.c_str(), nearestRssi);
         #endif
       } else {
-        Serial.println(F("Learning Complete! Paired Device is same as previous!\n"));
+        #ifdef DEBUG
+          Serial.println(F("Learning Complete! Paired Device is same as previous!\n"));
+        #endif
       }
 
       // Do end of learning tasks
@@ -674,7 +674,7 @@ void handleSettingsPost() {
       if (needReboot) {
         #ifdef DEBUG
           Serial.println(F("Device rebooting to settings..."));
-          delay(10000UL);
+          delay(5000UL);
         #endif
         ESP.restart();
       }
