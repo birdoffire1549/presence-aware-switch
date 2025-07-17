@@ -49,40 +49,64 @@ void LedMan::setCallerPriority(String caller, int priority) {
  * even if a lower priority processs/caller wants it on. Without a lock, when 
  * a process sets the led to off another lower priority process can turn it on.
  * 
- * @param ledId - The String ID for the LED.
- * @param caller - The String ID for the Caller.
+ * @param ledId - The ID of the LED to check caller state for as String.
+ * @param caller - The ID of the caller to check LED state for as String.
  */
 void LedMan::lockLed(String ledId, String caller) {
     if (locks.count(caller.c_str()) == 0 || locks[caller.c_str()].count(ledId.c_str()) == 0) {
-        locks[caller.c_str()][ledId.c_str()] = 1;
+        // An existing lock wasn't found, so create it.
+        locks[caller.c_str()][ledId.c_str()] = 1; // Value doesn't matter.
         if (
             callerStates.count(caller.c_str()) == 0
             || callerStates[caller.c_str()].count(ledId.c_str()) == 0
         ) {
+            // No caller state for LED so create an off/low state.
             callerStates[caller.c_str()][ledId.c_str()] = LOW;
         }
     }
 }
 
-
+/**
+ * Releases a lock on an LED for a given caller.
+ * 
+ * @param ledId - The ID of the LED to check caller state for as String.
+ * @param caller - The ID of the caller to check LED state for as String.
+ */
 void LedMan::releaseLed(String ledId, String caller) {
     if (locks.count(caller.c_str()) > 0 && locks[caller.c_str()].count(ledId.c_str()) > 0) {
-        // If locked on specified LED
+        // Locked on specified LED.
         locks[caller.c_str()].erase(ledId.c_str());
         if (
             callerStates.count(caller.c_str()) > 0 
             && callerStates[caller.c_str()].count(ledId.c_str()) > 0 
             && callerStates[caller.c_str()][ledId.c_str()] == LOW
         ) {
+            // Erase LOW state because lock has been released.
             callerStates[caller.c_str()].erase(ledId.c_str());
         }
     }
 }
 
+/**
+ * Sets the LED state for a given caller to on/high.
+ * 
+ * @param ledId - The ID of the LED to check caller state for as String.
+ * @param caller - The ID of the caller to check LED state for as String.
+ */
 void LedMan::ledOn(String ledId, String caller) {
     callerStates[caller.c_str()][ledId.c_str()] = HIGH; 
 }
 
+/**
+ * Sets the LED state for a given caller to off/low.
+ * If the caller is locked on the LED then a LOW state
+ * is created/maintained, otherwise the LED state is
+ * removed so any other caller may turn the LED on if
+ * so desired.
+ * 
+ * @param ledId - The ID of the LED to check caller state for as String.
+ * @param caller - The ID of the caller to check LED state for as String.
+ */
 void LedMan::ledOff(String ledId, String caller) {
     if (
         locks.count(caller.c_str()) > 0 
@@ -93,11 +117,18 @@ void LedMan::ledOff(String ledId, String caller) {
     } else {
         // If not locked then delete state for LED for LOW
         if (callerStates.count(caller.c_str()) > 0) {
+            // Caller exists so attempt to erase the state for the LED
             callerStates[caller.c_str()].erase(ledId.c_str());
         }
     }
 }
 
+/**
+ * This function must be called repeatedly and ideally as quickly
+ * as possible. It contains the code to manage the state of the 
+ * device's LEDs. Ideally a call to this would go in the 
+ * firmware's main loop method.
+ */
 void LedMan::loop() {
     for (const auto& regLed : registeredLeds) {
         // Determine current status for each LED
@@ -119,9 +150,9 @@ void LedMan::loop() {
                         && priorities[caller.c_str()] <= lastPriority
                     )
                 ) {
-                    // Caller priority is greater or same to referenced one
+                    // Caller priority is higher (less) or same to referenced one
                     lastPriority = priorities[caller.c_str()];
-                    std::map<std::string, int> ledStates = callerState.second;
+                    std::map<std::string/*LedId*/, int/*HighLow*/> ledStates = callerState.second;
                     calcState = ledStates[ledId];
                 }
             }
@@ -134,6 +165,12 @@ void LedMan::loop() {
     }
 }
 
+/**
+ * Toggles the LED state for a given LED and Caller.
+ * 
+ * @param ledId - The ID of the LED to check caller state for as String.
+ * @param caller - The ID of the caller to check LED state for as String.
+ */
 void LedMan::ledToggle(String ledId, String caller) {
     if (currentState(ledId, caller) == HIGH) {
         ledOff(ledId, caller);
@@ -142,12 +179,22 @@ void LedMan::ledToggle(String ledId, String caller) {
     }
 }
 
+/**
+ * Returns the current on/off state for a given caller on a
+ * given LED. This may or not reflect the LED's actual state.
+ * 
+ * @param ledId - The ID of the LED to check caller state for as String.
+ * @param caller - The ID of the caller to check LED state for as String.
+ * 
+ * @return Returns the High/Low state as int.
+ */
 int LedMan::currentState(String ledId, String caller) {
-    if (callerStates.count(caller.c_str()) > 0) {
-        if (callerStates[caller.c_str()].count(ledId.c_str()) > 0) {
-            // Return whatever we found
-            return callerStates[caller.c_str()][ledId.c_str()];
-        }
+    if (
+        callerStates.count(caller.c_str()) > 0
+        && callerStates[caller.c_str()].count(ledId.c_str()) > 0
+    ) {
+        // Return whatever we found
+        return callerStates[caller.c_str()][ledId.c_str()];
     }
     // Finding nothing is same as LOW
 

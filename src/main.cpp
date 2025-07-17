@@ -41,8 +41,8 @@
 
 #define INIT_ON_STATE false
 
-#define FIRMWARE_VERSION "2.2.2"
-//#define DEBUG // <---- un-comment for debug
+#define FIRMWARE_VERSION "2.3.0"
+#define DEBUG // <---- un-comment for debug
 
 Settings settings;
 DNSServer dnsServer;
@@ -93,8 +93,8 @@ const String CLOSE_LED_ID = "close_led";
 
 const String LEARN_FUNCTION_ID = "learn";
 const String FACTORY_RESET_FUNCTION_ID = "factory";
-
 const String WIFI_ENABLE_FUNCTION_ID = "wifi";
+const String WIFI_DISABLE_FUNCTION_ID = "wifi_off";
 const String CLOSE_FUNCTION_ID = "close";
 
 /**
@@ -105,25 +105,34 @@ const String CLOSE_FUNCTION_ID = "close";
  */
 void setup() {
   WiFi.mode(WIFI_OFF);
+
+  // Initialize inputs/outputs
   pinMode(PAIR_BTN_PIN, INPUT);
   pinMode(CONTROLLED_DEVICE_PIN, OUTPUT);
   pinMode(LEARN_LED_PIN, OUTPUT);
   pinMode(CLOSE_LED_PIN, OUTPUT);
 
+  // Load settings
   settings.loadSettings();
   settings.logStartup();
 
+  // Initialize LED States
   digitalWrite(CONTROLLED_DEVICE_PIN, settings.isOnState() ? HIGH : LOW);
   digitalWrite(LEARN_LED_PIN, LOW);
   digitalWrite(CLOSE_LED_PIN, LOW);
 
+  // Register LEDs
   ledMan.addLed(LEARN_LED_PIN, LEARN_LED_ID);
   ledMan.addLed(CLOSE_LED_PIN, CLOSE_LED_ID);
 
+  // Priorities for LEARN LED
   ledMan.setCallerPriority(FACTORY_RESET_FUNCTION_ID, 1);
   ledMan.setCallerPriority(LEARN_FUNCTION_ID, 2);
-  ledMan.setCallerPriority(WIFI_ENABLE_FUNCTION_ID, 5);
-  ledMan.setCallerPriority(CLOSE_FUNCTION_ID, 10);
+  
+  // Priorities for CLOSE LED
+  ledMan.setCallerPriority(WIFI_DISABLE_FUNCTION_ID, 1);
+  ledMan.setCallerPriority(WIFI_ENABLE_FUNCTION_ID, 2);
+  ledMan.setCallerPriority(CLOSE_FUNCTION_ID, 3);
 
   #ifdef DEBUG
     // Initialize Serial for Output
@@ -142,8 +151,8 @@ void setup() {
   #endif
 
   #ifdef DEBUG
-    Serial.printf("Learn Hold: %d millis\n", settings.getEnableLearnHoldMillis());
-    Serial.printf("Learn Wait: %d millis\n", settings.getLearnWaitMillis());
+    Serial.printf("Learn Hold: %d millis\n", settings.getTriggerLearnMillis());
+    Serial.printf("Learn Wait: %d millis\n", settings.getLearnDurationMillis());
     Serial.printf("Max Not Seen: %d millis\n", settings.getMaxNotSeenMillis());
     Serial.printf("Max Near RSSI: %d \n", settings.getMaxNearRssi());
     Serial.printf("Paired Address: %s\n", settings.getParedAddress().c_str());
@@ -223,6 +232,7 @@ void doActivateDeactivateWiFi() {
 
     isWifiIsOn = true;
   } else if (triggerWifiIsOn) {
+    // WiFi is supposed to be on and it is on.
     static ulong timmerMillis = 0UL;
     if (millis() - timmerMillis > 50UL) {
       ledMan.ledToggle(CLOSE_LED_ID, WIFI_ENABLE_FUNCTION_ID);
@@ -272,9 +282,6 @@ void doActivateDeactivateWiFi() {
  * 
  */
 void doHandleButtonPresses() {
-  const ulong minWifiEnableMillis = 1500UL;
-  const ulong minFactoryHoldMillis = 30000UL;
-
   if (!triggerDeviceLearn && !triggerFactoryReset) {
     static ulong timerMillis = 0UL;
     ulong elapsedMillis = millis() - timerMillis;
@@ -287,9 +294,10 @@ void doHandleButtonPresses() {
         elapsedMillis = 0UL;
       }
 
-      if (!triggerWifiIsOn && elapsedMillis > minFactoryHoldMillis) {
+      if (!triggerWifiIsOn && elapsedMillis > settings.getTriggerFactoryMillis()) { // <------------------- [Factory Reset]
         // Button held for longer than needed for factory reset; Disabled if wifi is on
-        ledMan.ledOff(LEARN_LED_ID, LEARN_FUNCTION_ID);
+        ledMan.releaseLed(CLOSE_LED_ID, WIFI_ENABLE_FUNCTION_ID);
+        ledMan.ledOff(CLOSE_LED_ID, WIFI_ENABLE_FUNCTION_ID);
         ledMan.lockLed(LEARN_LED_ID, FACTORY_RESET_FUNCTION_ID);
         // Flashing learning LED to signal factory reset on release
         for (int i = 0; i < 4; i++) {
@@ -297,45 +305,49 @@ void doHandleButtonPresses() {
           ledMan.loop();
           delay(50UL);
         }
-      } else if (!triggerWifiIsOn && elapsedMillis >= settings.getEnableLearnHoldMillis()) {
-        // Button held long enough too trigger learn; Disabled if wifi on
-        // Turn on learning LED Solid to signal function triggered if released
-        ledMan.releaseLed(CLOSE_LED_ID, WIFI_ENABLE_FUNCTION_ID);
-        ledMan.ledOff(CLOSE_LED_ID, WIFI_ENABLE_FUNCTION_ID);
-        ledMan.ledOn(LEARN_LED_ID, LEARN_FUNCTION_ID);
       } else if (
-        elapsedMillis > minWifiEnableMillis 
-        && (
-          elapsedMillis < settings.getEnableLearnHoldMillis()
-          || triggerWifiIsOn
+        elapsedMillis > settings.getTriggerWiFiOnMillis() 
+        || (
+          triggerWifiIsOn 
+          && elapsedMillis > settings.getTriggerWiFiOffMillis() // Delay prevents accedental shut off
         )
-      ) {
+      ) { // <--------------------------------------------------------------------------------------------- [WiFi On/Off]
         // Flashing Close LED to signal WiFi on/off if released
+        ledMan.ledOff(LEARN_LED_ID, LEARN_FUNCTION_ID);
         ledMan.lockLed(CLOSE_LED_ID, WIFI_ENABLE_FUNCTION_ID);
         if (!triggerWifiIsOn) {
+          // WiFi is off currently and button press is long enough to switch state
           static ulong subTimerMillis = 0UL;
           if (millis() - subTimerMillis > 50UL) {
             ledMan.ledToggle(CLOSE_LED_ID, WIFI_ENABLE_FUNCTION_ID);
             subTimerMillis = millis();
           }
         } else {
-          ledMan.ledOff(CLOSE_LED_ID, WIFI_ENABLE_FUNCTION_ID);
+          // WiFi is on currently
+          ledMan.lockLed(CLOSE_LED_ID, WIFI_DISABLE_FUNCTION_ID); // Initial lock state is off; No need to set off state here.
         }
+      } else if (!triggerWifiIsOn && elapsedMillis >= settings.getTriggerLearnMillis()) { // <------------- [Learn]
+        // Button held long enough too trigger learn
+        // Turn on learning LED Solid to signal function triggered if released
+        ledMan.ledOn(LEARN_LED_ID, LEARN_FUNCTION_ID);
       } 
     } else if (timerMillis > 0UL) {
       // There was a button press; Evaluate the length for functionality
-      if (elapsedMillis > minFactoryHoldMillis) {
+      if (!triggerWifiIsOn && elapsedMillis > settings.getTriggerFactoryMillis()) { // <------------------- [TRIGGER: Factory Reset]
         // Super Long Hold - Factory Reset
         triggerFactoryReset = true;
-      } else if (elapsedMillis >= settings.getEnableLearnHoldMillis()) {
-        // Long Press - Learning Mode
-        triggerDeviceLearn = true;
       } else if (
-        elapsedMillis > minWifiEnableMillis 
-        && elapsedMillis < settings.getEnableLearnHoldMillis()
-      ) {
-        // Short Press - WiFi On/Off
+        elapsedMillis > settings.getTriggerWiFiOnMillis()
+        || (
+          triggerWifiIsOn 
+          && elapsedMillis > settings.getTriggerWiFiOffMillis() // Delay prevents accedental shut off
+        )
+      ) { // <--------------------------------------------------------------------------------------------- [TRIGGER: WiFi On/Off]
+        // Medium Press - WiFi On/Off
         triggerWifiIsOn = !triggerWifiIsOn;
+      } else if (!triggerWifiIsOn && elapsedMillis >= settings.getTriggerLearnMillis()) { // <------------- [TRIGGER: Learn]
+        // Short Press - Learning Mode
+        triggerDeviceLearn = true;
       }
 
       timerMillis = 0UL;
@@ -344,6 +356,7 @@ void doHandleButtonPresses() {
       ledMan.ledOff(CLOSE_LED_ID, WIFI_ENABLE_FUNCTION_ID);
       ledMan.releaseLed(LEARN_LED_ID, FACTORY_RESET_FUNCTION_ID);
       ledMan.ledOff(LEARN_LED_ID, FACTORY_RESET_FUNCTION_ID);
+      ledMan.releaseLed(CLOSE_LED_ID, WIFI_DISABLE_FUNCTION_ID);
     } 
   }
 }
@@ -527,7 +540,7 @@ void doCheckLearnTask() {
     }
 
     // Wait 10 Seconds to allow nearest discovery then pair with nearest
-    if (millis() - learnStartMillis > settings.getLearnWaitMillis()) {
+    if (millis() - learnStartMillis > settings.getLearnDurationMillis()) {
       std::string nearestId = "";
       int nearestRssi = -999;
 
@@ -581,8 +594,11 @@ void handleSettingsPage() {
   page.replace(F("${close_rssi}"), String(settings.getCloseRssi()));
   page.replace(F("${max_rssi}"), String(settings.getMaxNearRssi()));
   page.replace(F("${max_seen}"), String(settings.getMaxNotSeenMillis()));
-  page.replace(F("${learn_trigger}"), String(settings.getEnableLearnHoldMillis()));
-  page.replace(F("${learn_wait}"), String(settings.getLearnWaitMillis()));
+  page.replace(F("${learn_trigger}"), String(settings.getTriggerLearnMillis()));
+  page.replace(F("${factory_trigger}"), String(settings.getTriggerFactoryMillis()));
+  page.replace(F("${wifi_on_trigger}"), String(settings.getTriggerWiFiOnMillis()));
+  page.replace(F("${wifi_off_trigger}"), String(settings.getTriggerWiFiOffMillis()));
+  page.replace(F("${learn_wait}"), String(settings.getLearnDurationMillis()));
   page.replace(F("${pared_address}"), settings.getParedAddress());
   page.replace(F("${startups}"), String(settings.getStartups()));
   page.replace(F("${uptime}"), Utils::userFriendlyElapsedTime((millis() - settings.getLastStartMillis())));
@@ -609,6 +625,9 @@ void handleSettingsPost() {
   String newMaxSeenMillis = web.arg(F("max_seen"));
   String newLearnWaitMillis = web.arg(F("learn_wait"));
   String newLearnTriggerMillis = web.arg(F("learn_trigger"));
+  String newFactoryTriggerMillis = web.arg(F("factory_trigger"));
+  String newWiFiOnTriggerMillis = web.arg(F("wifi_on_trigger"));
+  String newWiFiOffTriggerMillis = web.arg(F("wifi_off_trigger"));
   
   if (
     newApPwd && !newApPwd.isEmpty()
@@ -617,6 +636,9 @@ void handleSettingsPost() {
     && newMaxSeenMillis && !newMaxSeenMillis.isEmpty()
     && newLearnWaitMillis && !newLearnWaitMillis.isEmpty()
     && newLearnTriggerMillis && !newLearnTriggerMillis.isEmpty()
+    && newFactoryTriggerMillis && !newFactoryTriggerMillis.isEmpty()
+    && newWiFiOnTriggerMillis && !newWiFiOnTriggerMillis.isEmpty()
+    && newWiFiOffTriggerMillis && !newWiFiOffTriggerMillis.isEmpty()
   ) {
     bool needSave = false;
     bool needReboot = false;
@@ -646,15 +668,33 @@ void handleSettingsPost() {
     }
 
     ulVal = newLearnTriggerMillis.toDouble();
-    if (settings.getEnableLearnHoldMillis() != ulVal) {
+    if (settings.getTriggerLearnMillis() != ulVal) {
       needSave = true;
-      settings.setEnableLearnHoldMillis(ulVal);
+      settings.setTriggerLearnMillis(ulVal);
+    }
+
+    ulVal = newFactoryTriggerMillis.toDouble();
+    if (settings.getTriggerFactoryMillis() != ulVal) {
+      needSave = true;
+      settings.setTriggerFactoryMillis(ulVal);
+    }
+
+    ulVal = newWiFiOnTriggerMillis.toDouble();
+    if (settings.getTriggerWiFiOnMillis() != ulVal) {
+      needSave = true;
+      settings.setTriggerWiFiOnMillis(ulVal);
+    }
+
+    ulVal = newWiFiOffTriggerMillis.toDouble();
+    if (settings.getTriggerWiFiOffMillis() != ulVal) {
+      needSave = true;
+      settings.setTriggerWiFiOffMillis(ulVal);
     }
 
     ulVal = newLearnWaitMillis.toDouble();
-    if (settings.getLearnWaitMillis() != ulVal) {
+    if (settings.getLearnDurationMillis() != ulVal) {
       needSave = true;
-      settings.setLearnWaitMillis(ulVal);
+      settings.setLearnDurationMillis(ulVal);
     }
 
     if (needSave) {
