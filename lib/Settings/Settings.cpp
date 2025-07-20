@@ -78,8 +78,8 @@ bool Settings::loadSettings() {
     return ok;
 }
 
-bool Settings::isOnState() { return nvSettings.onState; }
-void Settings::setOnState(bool onState) { nvSettings.onState = onState; }
+bool Settings::isOnState() { return vSettings.onState; }
+void Settings::setOnState(bool onState) { vSettings.onState = onState; }
 
 int Settings::getMaxNearRssi() { return nvSettings.maxNearRssi; }
 void Settings::setMaxNearRssi(int rssi) { nvSettings.maxNearRssi = rssi; }
@@ -90,14 +90,35 @@ void Settings::setCloseRssi(int rssi) { nvSettings.closeRssi = rssi; }
 unsigned long Settings::getMaxNotSeenMillis() { return nvSettings.maxNotSeenMillis; }
 void Settings::setMaxNotSeenMillis(unsigned long millis) { nvSettings.maxNotSeenMillis = millis; }
 
-unsigned long Settings::getLearnWaitMillis() { return nvSettings.learnWaitMillis; }
-void Settings::setLearnWaitMillis(unsigned long millis) { nvSettings.learnWaitMillis = millis; }
+unsigned long Settings::getLearnDurationMillis() { return nvSettings.learnDurationMillis; }
+void Settings::setLearnDurationMillis(unsigned long millis) { nvSettings.learnDurationMillis = millis; }
 
-unsigned long Settings::getEnableLearnHoldMillis() { return nvSettings.enableLearnHoldMillis; }
-void Settings::setEnableLearnHoldMillis(unsigned long millis) { nvSettings.enableLearnHoldMillis = millis; }
+unsigned long Settings::getTriggerLearnMillis() { return nvSettings.triggerLearnMillis; }
+void Settings::setTriggerLearnMillis(unsigned long millis) { nvSettings.triggerLearnMillis = millis; }
+
+unsigned long Settings::getTriggerFactoryMillis() { return nvSettings.triggerFactoryMillis; }
+void Settings::setTriggerFactoryMillis(unsigned long millis) { nvSettings.triggerFactoryMillis = millis; }
+
+unsigned long Settings::getTriggerWiFiOnMillis() { return nvSettings.triggerWiFiOnMillis; }
+void Settings::setTriggerWiFiOnMillis(unsigned long millis) { nvSettings.triggerWiFiOnMillis = millis; }
+
+unsigned long Settings::getTriggerWiFiOffMillis() { return nvSettings.triggerWiFiOffMillis; }
+void Settings::setTriggerWiFiOffMillis(unsigned long millis) { nvSettings.triggerWiFiOffMillis = millis; }
 
 String Settings::getParedAddress() { return String(nvSettings.pairedAddress); }
 void Settings::setParedAddress(String address) { strcpy(nvSettings.pairedAddress, address.c_str()); }
+
+String Settings::getApPwd() { return String(nvSettings.apPwd); }
+void Settings::setApPwd(String apPwd) { strcpy(nvSettings.apPwd, apPwd.c_str()); }
+
+unsigned long Settings::getStartups() { return nvSettings.startups;}
+unsigned long Settings::getLastStartMillis() { return nvSettings.lastStartMillis; }
+
+void Settings::logStartup() {
+    nvSettings.startups = nvSettings.startups + 1UL;
+    nvSettings.lastStartMillis = millis();
+    saveSettings();
+}
 
 /*
 =================================================================
@@ -112,14 +133,19 @@ Private Functions BELOW
  * changes to flash.
 */
 void Settings::defaultSettings() {
-    // Default the settings..
-    nvSettings.onState = factorySettings.onState;
+    // Default the settings...
+    nvSettings.startups = factorySettings.startups;
+    nvSettings.lastStartMillis = factorySettings.lastStartMillis;
     nvSettings.maxNearRssi = factorySettings.maxNearRssi;
     nvSettings.closeRssi = factorySettings.closeRssi;
     nvSettings.maxNotSeenMillis = factorySettings.maxNotSeenMillis;
-    nvSettings.learnWaitMillis = factorySettings.learnWaitMillis;
-    nvSettings.enableLearnHoldMillis = factorySettings.enableLearnHoldMillis;
+    nvSettings.learnDurationMillis = factorySettings.learnDurationMillis;
+    nvSettings.triggerLearnMillis = factorySettings.triggerLearnMillis;
+    nvSettings.triggerFactoryMillis = factorySettings.triggerFactoryMillis;
+    nvSettings.triggerWiFiOnMillis = factorySettings.triggerWiFiOnMillis;
+    nvSettings.triggerWiFiOffMillis = factorySettings.triggerWiFiOffMillis;
     strcpy(nvSettings.pairedAddress, factorySettings.pairedAddress);
+    strcpy(nvSettings.apPwd, factorySettings.apPwd);
 }
 
 /**
@@ -132,13 +158,16 @@ void Settings::defaultSettings() {
 */
 String Settings::hashNvSettings(NVSettings nvSet) {
     String content = "";
-    content = content + String(nvSet.onState);
     content = content + String(nvSet.maxNearRssi);
     content = content + String(nvSet.closeRssi);
     content = content + String(nvSet.maxNotSeenMillis);
-    content = content + String(nvSet.learnWaitMillis);
-    content = content + String(nvSet.enableLearnHoldMillis);
+    content = content + String(nvSet.learnDurationMillis);
+    content = content + String(nvSet.triggerLearnMillis);
+    content = content + String(nvSet.triggerFactoryMillis);
+    content = content + String(nvSet.triggerWiFiOnMillis);
+    content = content + String(nvSet.triggerWiFiOffMillis);
     content = content + nvSet.pairedAddress;
+    content = content + nvSet.apPwd;
     
     MD5Builder builder = MD5Builder();
     builder.begin();
