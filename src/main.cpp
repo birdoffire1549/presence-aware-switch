@@ -41,8 +41,8 @@
 
 #define INIT_ON_STATE false
 
-#define FIRMWARE_VERSION "2.3.0"
-#define DEBUG // <---- un-comment for debug
+#define FIRMWARE_VERSION "2.3.1"
+//#define DEBUG // <---- un-comment for debug
 
 Settings settings;
 DNSServer dnsServer;
