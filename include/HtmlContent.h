@@ -60,13 +60,16 @@
     };
 
     const char PROGMEM SUCCESSFUL[] = {
-        "<div id=\"successful\">Settings Update Successful</div>"
+        "<script>alert(\"Settings Update Successful\");</script>"
+    };
+
+    const char PROGMEM REBOOT[] = {
+        "<script>alert(\"WiFi shutting down to apply settings...\");</script>"
     };
 
     const char PROGMEM FAILED[] = {
-        "<div id=\"failed\">Settings Update Failed!</div>"
+        "<script>alert(\"Settings Update Failed!\");</script>"
     };
-
 
     const char PROGMEM NOT_FOUND_PAGE[] = {
         "<!DOCTYPE HTML>"
