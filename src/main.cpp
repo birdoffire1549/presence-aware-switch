@@ -20,19 +20,12 @@
 #include <WiFi.h>
 #include <DNSServer.h>
 #include <WebServer.h>
+#include <BLEDevice.h>
 
 #include "HtmlContent.h"
 #include <Utils.h>
 #include <IpUtils.h>
 #include <LedMan.h>
-
-#include <BLEDevice.h>
-#include <BLEUtils.h>
-#include <BLEScan.h>
-#include <BLEAdvertisedDevice.h>
-#include <BLEEddystoneURL.h>
-#include <BLEEddystoneTLM.h>
-#include <BLEBeacon.h>
 
 #define PAIR_BTN_PIN 32
 #define LEARN_LED_PIN 13
@@ -41,8 +34,8 @@
 
 #define INIT_ON_STATE false
 
-#define FIRMWARE_VERSION "2.3.1"
-//#define DEBUG // <---- un-comment for debug
+#define FIRMWARE_VERSION "2.3.3"
+#define DEBUG // <---- un-comment for debug
 
 Settings settings;
 DNSServer dnsServer;
@@ -52,7 +45,7 @@ WebServer web(80);
 // --------------------------------------
 void doCheckLearnTask();
 void doBTScan();
-void doPurgeOldSeenDevices();
+void doPurgeOldSeenDevices(unsigned long wifiOnMillis);
 void doHandleOnOffSwitching();
 void doDeterminePairedDeviceProximity();
 void doCheckForCloseDevice();
@@ -190,6 +183,10 @@ void doHandleNetworkTasks() {
   }
 }
 
+/**
+ * Handles transitioning the WiFi from active to inactive and 
+ * visa-versa.
+ */
 void doActivateDeactivateWiFi() {
   if (triggerWifiIsOn && !isWifiIsOn) {
     ledMan.lockLed(CLOSE_LED_ID, WIFI_ENABLE_FUNCTION_ID);
@@ -248,6 +245,7 @@ void doActivateDeactivateWiFi() {
     #endif
 
     dnsServer.stop();
+    yield();
     
     #ifdef DEBUG
       Serial.println(F("Complete."));
@@ -255,12 +253,14 @@ void doActivateDeactivateWiFi() {
     #endif
 
     web.stop();
+    yield();
     
     #ifdef DEBUG
       Serial.println(F("Complete."));
       Serial.print(F("Stopping WiFi AP... "));
     #endif
 
+    delay(2000);
     WiFi.softAPdisconnect(true);
     
     #ifdef DEBUG
@@ -450,33 +450,40 @@ void doHandleOnOffSwitching() {
  * to be in-range.
  * 
  */
-void doPurgeOldSeenDevices() {
+void doPurgeOldSeenDevices(unsigned long wifiOnMillis) {
   // Purge seenDevices that are expired
   int devCount = seenDevices.size();
   if (devCount > 0) {
     std::vector<std::string> purgeList;
 
-    // Locate expired devices which need purged
-    for (const auto& pair : seenDevices) {
-      if (millis() - pair.second > settings.getMaxNotSeenMillis()) {
-        purgeList.push_back(pair.first);
+    if (wifiOnMillis != 0UL) {  // WiFi was on so we compensate expos for that time...
+      // Bump the time for all seenDevices to erase the lapse while wifi was on
+      for (const auto& pair : seenDevices) {
+        seenDevices[pair.first] += wifiOnMillis;
       }
-    }
-
-    // Purge the identified expired devices
-    for (std::string id : purgeList) {
-      seenDevices.erase(id);
-      seenRssis.erase(id);
-      #ifdef DEBUG
-        if (
-          settings.getParedAddress().equalsIgnoreCase(F("xx:xx:xx:xx:xx:xx")) 
-          || settings.getParedAddress().equalsIgnoreCase(String(id.c_str()))
-        ) { 
-          Serial.printf("Purged 'seen' device; device=[%s]\n", id.c_str());
+    } else { // Normal operation do purge routine because wifi is off...
+      // Locate expired devices which need purged
+      for (const auto& pair : seenDevices) {
+        if (millis() - pair.second > settings.getMaxNotSeenMillis()) {
+          purgeList.push_back(pair.first);
         }
-      #endif
+      }
+
+      // Purge the identified expired devices
+      for (std::string id : purgeList) {
+        seenDevices.erase(id);
+        seenRssis.erase(id);
+        #ifdef DEBUG
+          if (
+            settings.getParedAddress().equalsIgnoreCase(F("xx:xx:xx:xx:xx:xx")) 
+            || settings.getParedAddress().equalsIgnoreCase(String(id.c_str()))
+          ) { 
+            Serial.printf("Purged 'seen' device; device=[%s]\n", id.c_str());
+          }
+        #endif
+      }
+      purgeList.clear();
     }
-    purgeList.clear();
   }
 }
 
@@ -485,38 +492,52 @@ void doPurgeOldSeenDevices() {
  * purging stored devices not seen past their expiration
  * time, then it kicks off the scan again if it has completed.
  * 
+ * BlueTooth scanning is suspended while wifi is on to improve 
+ * stability.
  */
 void doBTScan() {
   static bool firstRun = true;
+  static unsigned long wifiOnStartMillis = 0UL;
   bool wdExpired = millis() - scanningWatchdogMillis > 15000UL;
-  if (!isScanning || wdExpired) {
-    // Start scanning when it is done or if watchdog expires
-    if (wdExpired || firstRun) {
-      if (!firstRun) {
-        btScanWDExpos ++;
-        #ifdef DEBUG
-          Serial.println("WARN: BT Scan watchdog exipred!");
-        #endif
+  
+  if (!isWifiIsOn) {
+    if (!isScanning || wdExpired) {
+      // Start scanning when it is done or if watchdog expires
+      if (wdExpired || firstRun) {
+        if (!firstRun) {
+          btScanWDExpos ++;
+          #ifdef DEBUG
+            Serial.println("WARN: BT Scan watchdog exipred!");
+          #endif
+        }
+
+        scan = BLEDevice::getScan();
+        scan->clearResults();
+        scan->stop();
+        yield();
+        delay(500);
+        scan->setActiveScan(true);  //active scan uses more power, but get results faster
+        scan->setInterval(100);
+        scan->setWindow(99);  // less or equal setInterval value
+        firstRun = false;
       }
+      
+      isScanning = true;
+      scan->start(5, handleBTScanResults);
 
-      scan = BLEDevice::getScan();
-      scan->clearResults();
-      scan->stop();
-      yield();
-      delay(500);
-      scan->setActiveScan(true);  //active scan uses more power, but get results faster
-      scan->setInterval(100);
-      scan->setWindow(99);  // less or equal setInterval value
-      firstRun = false;
+      scanningWatchdogMillis = millis();
     }
-    
-    isScanning = true;
-    scan->start(5, handleBTScanResults);
 
+    unsigned long wifiOnMillis = wifiOnStartMillis == 0UL ? 0UL : millis() - wifiOnStartMillis;
+    wifiOnStartMillis = 0UL;
+
+    doPurgeOldSeenDevices(wifiOnMillis);
+  } else {
+    if (wifiOnStartMillis == 0UL) {
+      wifiOnStartMillis = millis();
+    }
     scanningWatchdogMillis = millis();
   }
-
-  doPurgeOldSeenDevices();
 }
 
 /**
@@ -712,11 +733,11 @@ void handleSettingsPost() {
         }
       
       if (needReboot) {
+        settingsUpdateResult = String(REBOOT);
         #ifdef DEBUG
-          Serial.println(F("Device rebooting to settings..."));
-          delay(5000UL);
+          Serial.println(F("Shutting down WiFi to force settings update."));
         #endif
-        ESP.restart();
+        triggerWifiIsOn = false;
       }
     }
   }

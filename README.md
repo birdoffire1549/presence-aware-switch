@@ -7,27 +7,33 @@ The final device once assembled is a box with a power cord, an electrical outle,
 ![Device Image](images/DeviceImage.jpg)
 
 When one places a BlueTooth LE beacon near the device, one of the LEDs lights up (Close LED) indicating a compatible device in close range. This is known as the close device LED. 
-This LED is a great way of being sure the device sees a device prior to it being learned and tracked. It is also a way for the device to indicate that something else is 
-close enough that its signal may interfere with the learning of a desired device.
+
+This LED is a great way of being sure the device sees a device prior to it being learned and tracked. It is also a way for the device to indicate that something else is close enough that its signal may interfere with the learning of a desired device.
 
 ## The Close LED
 In normal operating mode the Close LED will be continuously lit while a beacon device is in close proximity, however it is also used to indicate when WiFi is on/enabled.
 When the device is in WiFi on/enabled mode, the Close LED will blink rapidly and no longer indicate close devices as the device is not able to pair/learn devices when in this mode.
 
+![Close Device](images/CloseDevice.jpg)
+
+In the above image the Close LED for this device is a Blue LED.
+
 ## The Learn LED
 The learn LED is used to indicate when the device is in learning mode. It also indicates the device is doing a factory ressset when the Learn LED flashes rapidly.
 
+![Learn Mode](images/LearningInProg.jpg)
+
+In the above image the Learning LED for this device is a Yellow/Orangeish LED.
+
 ## The Button
-The button on the device is the primary way in which a user interacts with the device. The button allows the user to cause the device to learn a near Bluetooth LE Beacon, 
-it allows for the enabling/disabling of WiFi and it is used to force the device to do a factory reset.
+The button on the device is the primary way in which a user interacts with the device. The button allows the user to cause the device to learn a near Bluetooth LE Beacon, it allows for the enabling/disabling of WiFi and it is used to force the device to do a factory reset.
+
+![Enable Learning](images/EnableLearning.jpg)
 
 ### Learning a Device
-To learn or start tracking a beacon, the beacon should be placed as close as possible to the device. The Close LED should light up. Then press the button on the device and hold for about 5 or 6 seconds, 
-at which time the Learning LED will turn on. At that time release the button and leave the beacon near the device. The LED will go out once loearning is complete. This takes about
-10 seconds.
+To learn or start tracking a beacon, the beacon should be placed as close as possible to the device. The Close LED should light up. Then press the button on the device and hold for about 5 or 6 seconds, at which time the Learning LED will turn on. At that time release the button and leave the beacon near the device. The LED will go out once loearning is complete. This takes about 10 seconds.
 
-After a beacon has been learned, when it is near the device, the device will power on the box's outlet. When the beacon is far from the device and not seen in more than 1 minute the
-device will power off the outlet until it next sees the beacon again.
+After a beacon has been learned, when it is near the device, the device will power on the box's outlet. When the beacon is far from the device and not seen in more than 1 minute the device will power off the outlet until it next sees the beacon again.
 
 ### WiFi Enable/Disable
 The device can be placed into WiFi AP mode so that one can connect to the device and modify the device's settings. To do this one must enable the WiFi. This enabling/disabling of the WiFi is neccessary because
@@ -56,3 +62,8 @@ It is also worth noting that the device cannot be put into learn nor factory res
 
 ### Factory Reset
 To cause the device to perform a factory reset you can press and hold the device button for about 30 seconds, at which time the Learn LED starts flashing, then release the button and the device will factory reset forgetting any tracked beacon and resetting all the custom setting including WiFi password to their initial defaults.
+
+### An Inside Look
+Below is an image of the inside of the device. Keep in mind that this is really a kind-of working prototype device. There are many things I would change about it and lessons learned now that the device is working. Maybe one day I will make those improvements in a new device.
+
+![Device Inside Look](images/OpenDevice.jpg)
