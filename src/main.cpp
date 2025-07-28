@@ -34,8 +34,8 @@
 
 #define INIT_ON_STATE false
 
-#define FIRMWARE_VERSION "2.3.3"
-#define DEBUG // <---- un-comment for debug
+#define FIRMWARE_VERSION "2.3.4"
+//#define DEBUG // <---- un-comment for debug
 
 Settings settings;
 DNSServer dnsServer;
@@ -127,13 +127,13 @@ void setup() {
   ledMan.setCallerPriority(WIFI_ENABLE_FUNCTION_ID, 2);
   ledMan.setCallerPriority(CLOSE_FUNCTION_ID, 3);
 
-  #ifdef DEBUG
-    // Initialize Serial for Output
-    Serial.begin(115200);;
-    delay(1000UL);
-    if (!Serial) ESP.restart();
-    delay(1000UL);
+  // Initialize Serial for Output
+  Serial.begin(115200);;
+  delay(1000UL);
+  if (!Serial) ESP.restart();
+  delay(1000UL);
 
+  #ifdef DEBUG
     Serial.print("Initializing bluetooth... ");
   #endif
   
